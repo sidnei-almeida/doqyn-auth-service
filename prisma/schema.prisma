@@ -1,0 +1,347 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AuthUserStatus {
+  active
+  disabled
+  pending_verification
+  anonymized
+}
+
+enum TenantStatus {
+  pending
+  active
+  blocked
+}
+
+enum TenantType {
+  individual
+  business
+}
+
+enum MembershipStatus {
+  pending
+  active
+  blocked
+  rejected
+  removed
+}
+
+enum AccessGroupStatus {
+  active
+  inactive
+  deleted
+}
+
+enum TenantRole {
+  doqyn_admin
+  company_admin
+  individual_admin
+  user
+}
+
+enum AccessRequestStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+model AuthUser {
+  id                 String         @id @default(uuid()) @db.Uuid
+  emailEncrypted     String         @map("email_encrypted")
+  emailLookupHash    String         @unique @map("email_lookup_hash")
+  firstNameEncrypted String?        @map("first_name_encrypted")
+  lastNameEncrypted  String?        @map("last_name_encrypted")
+  whatsappEncrypted  String?        @map("whatsapp_encrypted")
+  whatsappLookupHash String?        @map("whatsapp_lookup_hash")
+  status             AuthUserStatus @default(active)
+  emailVerified      Boolean        @default(false) @map("email_verified")
+  lastLoginAt        DateTime?      @map("last_login_at")
+  anonymizedAt       DateTime?      @map("anonymized_at")
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  credential         AuthCredential?
+  sessions           AuthSession[]
+  passwordResets     AuthPasswordReset[]
+  emailVerifications AuthEmailVerification[]
+  auditLogs          AuthAuditLog[]
+  memberships        AuthMembership[]
+  accessRequests     AuthAccessRequest[]
+  deletionRequests   AuthAccountDeletionRequest[]
+
+  @@index([whatsappLookupHash])
+  @@index([status])
+  @@map("auth_users")
+}
+
+model AuthCredential {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @unique @map("user_id") @db.Uuid
+  passwordHash      String   @map("password_hash")
+  passwordUpdatedAt DateTime @default(now()) @map("password_updated_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("auth_credentials")
+}
+
+model AuthSession {
+  id                 String    @id @default(uuid()) @db.Uuid
+  userId             String    @map("user_id") @db.Uuid
+  sessionTokenHash   String    @unique @map("session_token_hash")
+  activeMembershipId String?   @map("active_membership_id") @db.Uuid
+  expiresAt          DateTime  @map("expires_at")
+  revokedAt          DateTime? @map("revoked_at")
+  ipHash             String?   @map("ip_hash")
+  userAgentHash      String?   @map("user_agent_hash")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  user             AuthUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeMembership AuthMembership? @relation(fields: [activeMembershipId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([activeMembershipId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("auth_sessions")
+}
+
+model AuthPasswordReset {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("auth_password_resets")
+}
+
+model AuthEmailVerification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("auth_email_verifications")
+}
+
+model AuthLoginAttempt {
+  id              String   @id @default(uuid()) @db.Uuid
+  emailLookupHash String?  @map("email_lookup_hash")
+  ipHash          String?  @map("ip_hash")
+  success         Boolean
+  reason          String?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([emailLookupHash])
+  @@index([ipHash])
+  @@index([createdAt])
+  @@map("auth_login_attempts")
+}
+
+model AuthAuditLog {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String?  @map("user_id") @db.Uuid
+  actorMembershipId   String?  @map("actor_membership_id") @db.Uuid
+  targetUserId        String?  @map("target_user_id") @db.Uuid
+  targetMembershipId  String?  @map("target_membership_id") @db.Uuid
+  tenantTextId        String?  @map("tenant_text_id")
+  action              String
+  ipHash              String?  @map("ip_hash")
+  userAgentHash       String?  @map("user_agent_hash")
+  metadata            Json?
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  user AuthUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([tenantTextId])
+  @@index([targetMembershipId])
+  @@index([createdAt])
+  @@map("auth_audit_logs")
+}
+
+model AuthTenant {
+  id                    String       @id @default(uuid()) @db.Uuid
+  tenantId              String       @unique @map("tenant_id")
+  tenantType            TenantType   @map("tenant_type")
+  displayNameEncrypted  String?      @map("display_name_encrypted")
+  displayNameLookupHash String?      @map("display_name_lookup_hash")
+  slug                  String?      @unique
+  taxIdType             String?      @map("tax_id_type")
+  taxIdMasked           String?      @map("tax_id_masked")
+  taxIdHash             String?      @map("tax_id_hash")
+  status                TenantStatus @default(pending)
+  blockedAt             DateTime?    @map("blocked_at")
+  blockedByMembershipId String?      @map("blocked_by_membership_id") @db.Uuid
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @updatedAt @map("updated_at")
+
+  memberships    AuthMembership[]
+  accessGroups   AuthAccessGroup[]
+  accessRequests AuthAccessRequest[]
+
+  @@index([taxIdHash])
+  @@index([status])
+  @@map("auth_tenants")
+}
+
+model AuthMembership {
+  id                           String           @id @default(uuid()) @db.Uuid
+  userId                       String           @map("user_id") @db.Uuid
+  tenantId                     String           @map("tenant_id") @db.Uuid
+  status                       MembershipStatus @default(pending)
+  requestedJobTitleEncrypted   String?          @map("requested_job_title_encrypted")
+  requestedDepartmentEncrypted String?          @map("requested_department_encrypted")
+  requestedReasonEncrypted     String?          @map("requested_reason_encrypted")
+  approvedByMembershipId       String?          @map("approved_by_membership_id") @db.Uuid
+  approvedAt                   DateTime?        @map("approved_at")
+  rejectedByMembershipId       String?          @map("rejected_by_membership_id") @db.Uuid
+  rejectedAt                   DateTime?        @map("rejected_at")
+  blockedByMembershipId        String?          @map("blocked_by_membership_id") @db.Uuid
+  blockedAt                    DateTime?        @map("blocked_at")
+  removedByMembershipId        String?          @map("removed_by_membership_id") @db.Uuid
+  removedAt                    DateTime?        @map("removed_at")
+  createdAt                    DateTime         @default(now()) @map("created_at")
+  updatedAt                    DateTime         @updatedAt @map("updated_at")
+
+  user                   AuthUser                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant                 AuthTenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  roles                  AuthMembershipRole[]
+  accessGroupLinks       AuthMembershipAccessGroup[]
+  notificationPreference AuthNotificationPreference?
+  accessRequests         AuthAccessRequest[]
+  activeSessions         AuthSession[]
+
+  @@unique([userId, tenantId])
+  @@index([tenantId, status])
+  @@map("auth_memberships")
+}
+
+model AuthMembershipRole {
+  id           String     @id @default(uuid()) @db.Uuid
+  membershipId String     @map("membership_id") @db.Uuid
+  role         TenantRole
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  membership AuthMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, role])
+  @@map("auth_membership_roles")
+}
+
+model AuthAccessGroup {
+  id                   String            @id @default(uuid()) @db.Uuid
+  tenantId             String            @map("tenant_id") @db.Uuid
+  groupId              String            @map("group_id")
+  nameEncrypted        String            @map("name_encrypted")
+  slug                 String
+  descriptionEncrypted String?           @map("description_encrypted")
+  status               AccessGroupStatus @default(active)
+  deletedAt            DateTime?         @map("deleted_at")
+  deletedByMembershipId String?          @map("deleted_by_membership_id") @db.Uuid
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+
+  tenant      AuthTenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberLinks AuthMembershipAccessGroup[]
+
+  @@unique([tenantId, groupId])
+  @@unique([tenantId, slug])
+  @@index([tenantId, status])
+  @@map("auth_access_groups")
+}
+
+model AuthMembershipAccessGroup {
+  id            String   @id @default(uuid()) @db.Uuid
+  membershipId  String   @map("membership_id") @db.Uuid
+  accessGroupId String   @map("access_group_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  membership  AuthMembership  @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  accessGroup AuthAccessGroup @relation(fields: [accessGroupId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, accessGroupId])
+  @@map("auth_membership_access_groups")
+}
+
+model AuthAccessRequest {
+  id                              String              @id @default(uuid()) @db.Uuid
+  userId                          String              @map("user_id") @db.Uuid
+  tenantId                        String              @map("tenant_id") @db.Uuid
+  membershipId                    String?             @map("membership_id") @db.Uuid
+  status                          AccessRequestStatus @default(pending)
+  personType                      String              @map("person_type")
+  taxIdType                       String              @map("tax_id_type")
+  taxIdMasked                     String?             @map("tax_id_masked")
+  taxIdHash                       String?             @map("tax_id_hash")
+  tenantDisplayNameEncrypted      String?             @map("tenant_display_name_encrypted")
+  jobTitleEncrypted               String?             @map("job_title_encrypted")
+  departmentEncrypted             String?             @map("department_encrypted")
+  reasonEncrypted                 String?             @map("reason_encrypted")
+  operationalNotificationsConsent Boolean             @default(false) @map("operational_notifications_consent")
+  consentTextVersion              String?             @map("consent_text_version")
+  requestedAt                     DateTime            @default(now()) @map("requested_at")
+  decidedAt                       DateTime?           @map("decided_at")
+  decidedByMembershipId           String?             @map("decided_by_membership_id") @db.Uuid
+  createdAt                       DateTime            @default(now()) @map("created_at")
+  updatedAt                       DateTime            @updatedAt @map("updated_at")
+
+  user       AuthUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant     AuthTenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  membership AuthMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+
+  @@map("auth_access_requests")
+}
+
+model AuthNotificationPreference {
+  id                        String   @id @default(uuid()) @db.Uuid
+  membershipId              String   @unique @map("membership_id") @db.Uuid
+  email                     Boolean  @default(true)
+  whatsapp                  Boolean  @default(true)
+  documentCreated           Boolean  @default(true) @map("document_created")
+  documentUpdated           Boolean  @default(true) @map("document_updated")
+  documentRequiresSignature Boolean  @default(true) @map("document_requires_signature")
+  accessApproved            Boolean  @default(true) @map("access_approved")
+  accessRejected            Boolean  @default(true) @map("access_rejected")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  membership AuthMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@map("auth_notification_preferences")
+}
+
+model AuthAccountDeletionRequest {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  status    String   @default("pending")
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@map("auth_account_deletion_requests")
+}

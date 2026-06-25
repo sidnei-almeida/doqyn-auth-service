@@ -1,0 +1,60 @@
+import { z } from 'zod';
+
+const envSchema = z.object({
+  PORT: z.coerce.number().default(4100),
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  DATABASE_URL: z.string().min(1),
+  SESSION_COOKIE_NAME: z.string().default('doqyn_session'),
+  SESSION_TTL_DAYS: z.coerce.number().default(7),
+  COOKIE_DOMAIN: z.string().optional().default(''),
+  COOKIE_SECURE: z
+    .string()
+    .optional()
+    .default('false')
+    .transform((v) => v === 'true'),
+  COOKIE_SAME_SITE: z.enum(['strict', 'lax', 'none']).default('lax'),
+  ALLOWED_ORIGINS: z.string().default('http://localhost:5173'),
+  DOQYN_INTERNAL_API_KEY: z.string().min(1),
+  DATA_ENCRYPTION_KEY: z.string().min(1),
+  LOOKUP_HASH_SECRET: z.string().min(1),
+  SESSION_TOKEN_HASH_SECRET: z.string().min(1),
+  PASSWORD_RESET_TOKEN_HASH_SECRET: z.string().min(1),
+  PASSWORD_PEPPER: z.string().optional().default(''),
+  PASSWORD_RESET_TTL_MINUTES: z.coerce.number().default(30),
+  EMAIL_VERIFICATION_TTL_HOURS: z.coerce.number().default(24),
+});
+
+export type Env = z.infer<typeof envSchema>;
+
+let cachedEnv: Env | null = null;
+
+export function loadEnv(overrides?: Record<string, string>): Env {
+  if (cachedEnv && !overrides) {
+    return cachedEnv;
+  }
+
+  const parsed = envSchema.safeParse({ ...process.env, ...overrides });
+  if (!parsed.success) {
+    throw new Error(`Invalid environment variables: ${parsed.error.message}`);
+  }
+
+  if (!overrides) {
+    cachedEnv = parsed.data;
+  }
+
+  return parsed.data;
+}
+
+export function resetEnvCache(): void {
+  cachedEnv = null;
+}
+
+export function getAllowedOrigins(env: Env): string[] {
+  return env.ALLOWED_ORIGINS.split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+}
+
+export function isProduction(env: Env): boolean {
+  return env.NODE_ENV === 'production';
+}

@@ -1,0 +1,21 @@
+# Dependencies e build
+node_modules/
+dist/
+
+# Ambiente (secrets nunca versionar)
+.env
+.env.local
+.env.*.local
+
+# Logs e cobertura
+*.log
+coverage/
+
+# OS
+.DS_Store
+
+# Documentação interna (relatórios e notas locais; README.md na raiz continua versionado)
+docs/
+
+# Artefatos locais de teste manual (curl -c cookies.txt)
+cookies.txt

@@ -15,6 +15,8 @@ const envSchema = z.object({
   COOKIE_SAME_SITE: z.enum(['strict', 'lax', 'none']).default('lax'),
   ALLOWED_ORIGINS: z.string().default('http://localhost:5173'),
   DOQYN_INTERNAL_API_KEY: z.string().min(1),
+  DOQYN_APP_BASE_URL: z.string().default('http://127.0.0.1:3001'),
+  DOQYN_APP_INTERNAL_API_KEY: z.string().default('dev-app-internal-api-key-change-in-production'),
   DATA_ENCRYPTION_KEY: z.string().min(1),
   LOOKUP_HASH_SECRET: z.string().min(1),
   SESSION_TOKEN_HASH_SECRET: z.string().min(1),

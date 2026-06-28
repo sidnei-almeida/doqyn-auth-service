@@ -20,6 +20,8 @@ export const TEST_ENV = {
   COOKIE_SAME_SITE: 'lax',
   ALLOWED_ORIGINS: 'http://localhost:5173',
   DOQYN_INTERNAL_API_KEY: 'test-internal-api-key',
+  DOQYN_APP_BASE_URL: 'http://127.0.0.1:3001',
+  DOQYN_APP_INTERNAL_API_KEY: 'test-app-internal-api-key',
   DATA_ENCRYPTION_KEY: testEncryptionKey,
   LOOKUP_HASH_SECRET: 'test-lookup-secret',
   SESSION_TOKEN_HASH_SECRET: 'test-session-secret',

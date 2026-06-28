@@ -1,19 +1,24 @@
 import { prisma } from '../../db/prisma.js';
-import { encryptField, hashLookup } from '../../security/crypto.js';
+import { decryptField, encryptField, hashLookup } from '../../security/crypto.js';
 import { hashPassword } from '../../security/password.js';
+import {
+  ConflictError,
+  NotFoundError,
+  TenantNotActiveError,
+  ValidationError,
+} from '../../utils/errors.js';
 import {
   detectTaxIdType,
   maskTaxId,
   normalizeEmail,
   normalizePhone,
   normalizeTaxId,
-  slugify,
 } from '../../utils/normalize.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
 import type { AccessRequestInput } from './accessRequests.schemas.js';
 
-const GENERIC_SUCCESS_MESSAGE =
-  'Solicitação recebida. Se os dados estiverem corretos, entraremos em contato em breve.';
+const SUCCESS_MESSAGE =
+  'Sua solicitação foi enviada. Um administrador da empresa precisará aprovar seu acesso.';
 
 export async function submitAccessRequest(
   input: AccessRequestInput,
@@ -24,6 +29,46 @@ export async function submitAccessRequest(
   const whatsapp = normalizePhone(input.whatsapp);
   const taxId = normalizeTaxId(input.taxId);
   const taxIdHash = hashLookup(taxId);
+
+  if (input.personType !== 'business') {
+    throw new ValidationError(
+      'Solicitação de acesso disponível apenas para empresas (CNPJ).',
+      'INDIVIDUAL_ACCESS_NOT_SUPPORTED',
+    );
+  }
+
+  const tenant = await prisma.authTenant.findFirst({ where: { taxIdHash } });
+
+  if (tenant && tenant.tenantType !== 'business') {
+    throw new ValidationError(
+      'Solicitação de acesso disponível apenas para empresas.',
+      'TENANT_NOT_BUSINESS',
+    );
+  }
+
+  if (!tenant) {
+    if (taxId.length !== 14) {
+      throw new ValidationError('CNPJ inválido.', 'VALIDATION_ERROR');
+    }
+    throw new NotFoundError(
+      'Empresa não encontrada. Verifique o CNPJ ou cadastre sua empresa no DOQYN.',
+      'TENANT_NOT_FOUND',
+    );
+  }
+
+  if (taxId.length !== 14) {
+    throw new ValidationError('CNPJ inválido.', 'VALIDATION_ERROR');
+  }
+
+  if (tenant.status !== 'active') {
+    throw new TenantNotActiveError(
+      'Esta empresa ainda não está disponível para novos acessos.',
+    );
+  }
+
+  const tenantDisplayName =
+    input.tenantDisplayName?.trim() ||
+    (tenant.displayNameEncrypted ? decryptField(tenant.displayNameEncrypted) : 'Empresa');
 
   const result = await prisma.$transaction(async (tx) => {
     const emailLookupHash = hashLookup(email);
@@ -54,32 +99,24 @@ export async function submitAccessRequest(
     }
 
     const existingCredential = await tx.authCredential.findUnique({ where: { userId: user.id } });
-    if (!existingCredential && input.password) {
+    if (!existingCredential) {
       const passwordHash = await hashPassword(input.password);
       await tx.authCredential.create({ data: { userId: user.id, passwordHash } });
-    }
-
-    let tenant = await tx.authTenant.findFirst({ where: { taxIdHash } });
-    if (!tenant) {
-      const tenantType = input.personType === 'business' ? 'business' : 'individual';
-      tenant = await tx.authTenant.create({
-        data: {
-          tenantId: `tenant_${taxIdHash.slice(0, 16)}`,
-          tenantType,
-          displayNameEncrypted: encryptField(input.tenantDisplayName),
-          displayNameLookupHash: hashLookup(input.tenantDisplayName.toLowerCase()),
-          slug: slugify(input.tenantDisplayName),
-          taxIdType: detectTaxIdType(taxId),
-          taxIdMasked: maskTaxId(taxId),
-          taxIdHash,
-          status: 'pending',
-        },
+    } else if (input.password) {
+      const passwordHash = await hashPassword(input.password);
+      await tx.authCredential.update({
+        where: { userId: user.id },
+        data: { passwordHash },
       });
     }
 
     let membership = await tx.authMembership.findUnique({
       where: { userId_tenantId: { userId: user.id, tenantId: tenant.id } },
     });
+
+    if (membership?.status === 'active') {
+      throw new ConflictError('Você já possui acesso ativo nesta empresa.', 'MEMBERSHIP_EXISTS');
+    }
 
     if (!membership) {
       membership = await tx.authMembership.create({
@@ -92,25 +129,44 @@ export async function submitAccessRequest(
           requestedReasonEncrypted: encryptField(input.reason),
         },
       });
+    } else if (membership.status === 'pending') {
+      await tx.authMembership.update({
+        where: { id: membership.id },
+        data: {
+          requestedJobTitleEncrypted: encryptField(input.jobTitle),
+          requestedDepartmentEncrypted: encryptField(input.departmentText),
+          requestedReasonEncrypted: encryptField(input.reason),
+        },
+      });
     }
 
-    await tx.authAccessRequest.create({
-      data: {
+    const existingRequest = await tx.authAccessRequest.findFirst({
+      where: {
         userId: user.id,
         tenantId: tenant.id,
-        membershipId: membership.id,
         status: 'pending',
-        personType: input.personType,
-        taxIdType: detectTaxIdType(taxId),
-        taxIdMasked: maskTaxId(taxId),
-        taxIdHash,
-        tenantDisplayNameEncrypted: encryptField(input.tenantDisplayName),
-        jobTitleEncrypted: encryptField(input.jobTitle),
-        departmentEncrypted: encryptField(input.departmentText),
-        reasonEncrypted: encryptField(input.reason),
-        operationalNotificationsConsent: input.operationalNotificationsConsent,
       },
     });
+
+    if (!existingRequest) {
+      await tx.authAccessRequest.create({
+        data: {
+          userId: user.id,
+          tenantId: tenant.id,
+          membershipId: membership.id,
+          status: 'pending',
+          personType: input.personType,
+          taxIdType: detectTaxIdType(taxId),
+          taxIdMasked: maskTaxId(taxId),
+          taxIdHash,
+          tenantDisplayNameEncrypted: encryptField(tenantDisplayName),
+          jobTitleEncrypted: encryptField(input.jobTitle),
+          departmentEncrypted: encryptField(input.departmentText),
+          reasonEncrypted: encryptField(input.reason),
+          operationalNotificationsConsent: input.operationalNotificationsConsent,
+        },
+      });
+    }
 
     await tx.authNotificationPreference.upsert({
       where: { membershipId: membership.id },
@@ -118,15 +174,16 @@ export async function submitAccessRequest(
       update: {},
     });
 
-    return { userId: user.id, membershipId: membership.id };
+    return { userId: user.id, membershipId: membership.id, tenantTextId: tenant.tenantId };
   });
 
   await logAuthAudit('access.requested', {
     userId: result.userId,
+    tenantTextId: result.tenantTextId,
+    targetMembershipId: result.membershipId,
     ipHash,
     userAgentHash,
-    metadata: { membershipId: result.membershipId },
   });
 
-  return { ok: true, message: GENERIC_SUCCESS_MESSAGE };
+  return { ok: true, message: SUCCESS_MESSAGE };
 }

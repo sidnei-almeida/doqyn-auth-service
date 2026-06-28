@@ -99,3 +99,22 @@ export async function revokeAllUserSessions(userId: string): Promise<void> {
     },
   });
 }
+
+/** Revoga todas as sessões do usuário exceto a sessão atual (por token). */
+export async function revokeOtherUserSessions(
+  userId: string,
+  keepSessionToken: string,
+): Promise<number> {
+  const keepSessionTokenHash = hashSessionToken(keepSessionToken);
+  const result = await prisma.authSession.updateMany({
+    where: {
+      userId,
+      revokedAt: null,
+      sessionTokenHash: { not: keepSessionTokenHash },
+    },
+    data: {
+      revokedAt: new Date(),
+    },
+  });
+  return result.count;
+}

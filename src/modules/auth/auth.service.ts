@@ -13,6 +13,8 @@ import {
   requestPasswordReset,
   resetPassword as resetPasswordService,
 } from '../password-reset/passwordReset.service.js';
+import { changePassword as changePasswordService } from '../change-password/changePassword.service.js';
+import type { ChangePasswordInput } from '../change-password/changePassword.schemas.js';
 import {
   createSession,
   revokeSessionByToken,
@@ -276,6 +278,35 @@ export async function handlePasswordReset(
   });
 
   return { ok: true };
+}
+
+export async function handleChangePassword(
+  userId: string,
+  input: ChangePasswordInput,
+  sessionToken: string,
+  ctx: RequestContext,
+): Promise<
+  | { ok: true; message: string; revokedOtherSessions: number }
+  | { ok: false; message: string; code?: string }
+> {
+  const result = await changePasswordService(userId, input, sessionToken);
+
+  if (!result.success) {
+    return { ok: false, message: result.reason, code: result.code };
+  }
+
+  await logAuthAudit('password.updated', {
+    userId,
+    ipHash: ctx.ipHash,
+    userAgentHash: ctx.userAgentHash,
+    metadata: { revokedOtherSessions: result.revokedOtherSessions },
+  });
+
+  return {
+    ok: true,
+    message: 'Senha alterada com sucesso.',
+    revokedOtherSessions: result.revokedOtherSessions,
+  };
 }
 
 export async function getPublicUserById(userId: string): Promise<PublicUser | null> {

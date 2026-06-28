@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
 export const accessRequestSchema = z.object({
-  personType: z.enum(['individual', 'business']),
+  personType: z.enum(['individual', 'business']).default('business'),
   taxId: z.string().min(1),
-  tenantDisplayName: z.string().min(1),
+  tenantDisplayName: z.string().optional(),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   email: z.string().email(),

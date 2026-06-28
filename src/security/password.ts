@@ -35,5 +35,8 @@ export function validatePasswordStrength(password: string): string | null {
   if (password.length < MIN_PASSWORD_LENGTH) {
     return `A senha deve ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`;
   }
+  if (!/[a-zA-Z]/.test(password) || !/\d/.test(password)) {
+    return 'Senha fraca. Use letras e números com pelo menos 8 caracteres.';
+  }
   return null;
 }

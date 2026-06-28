@@ -16,6 +16,8 @@ enum AuthUserStatus {
 
 enum TenantStatus {
   pending
+  pending_provisioning
+  provisioning_failed
   active
   blocked
 }

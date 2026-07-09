@@ -16,6 +16,7 @@ import {
 } from '../utils/normalize.js';
 import {
   DEMO_COMPANIES,
+  DEMO_COMPANY_DEV_ACTIVE_USERS,
   DEMO_GLOBAL_ADMIN,
   DEMO_GLOBAL_ADMIN_TENANT_ID,
   DEMO_SEED_DEFAULT_PASSWORD,
@@ -31,12 +32,17 @@ import {
   type DemoSeedManifestAccessGroup,
   type DemoSeedManifestCompany,
   type DemoSeedManifestPendingUser,
+  type DemoSeedManifestGlobalAdmin,
   writeDemoSeedManifest,
 } from './demoSeed.manifest.js';
 import { writeDemoSeedReport } from './demoSeed.report.js';
 
 const DEMO_IP_HASH = hashLookup(`${DEMO_SEED_SOURCE}:ip`);
 const DEMO_USER_AGENT_HASH = hashLookup(`${DEMO_SEED_SOURCE}:user-agent`);
+
+function credentialUpdatePayload(passwordHash: string) {
+  return process.env.SEED_FORCE_PASSWORD_RESET === 'true' ? { passwordHash } : {};
+}
 
 export type RunDemoSeedOptions = {
   password?: string;
@@ -186,7 +192,7 @@ async function ensurePendingAccessRequest(input: {
   await prisma.authCredential.upsert({
     where: { userId: user.id },
     create: { userId: user.id, passwordHash: input.passwordHash },
-    update: { passwordHash: input.passwordHash },
+    update: credentialUpdatePayload(input.passwordHash),
   });
 
   let membership = await prisma.authMembership.findUnique({
@@ -343,31 +349,31 @@ async function ensureGlobalAdminTenant() {
   });
 }
 
-async function ensureGlobalAdmin(
-  admin: DemoGlobalAdminDef,
+async function ensureActiveTenantMember(
+  member: DemoGlobalAdminDef,
   tenantUuid: string,
   passwordHash: string,
-) {
-  const normalizedEmail = normalizeEmail(admin.email);
+): Promise<DemoSeedManifestGlobalAdmin> {
+  const normalizedEmail = normalizeEmail(member.email);
   const emailLookupHash = hashLookup(normalizedEmail);
-  const normalizedPhone = normalizePhone(admin.whatsapp);
-  const displayName = `${admin.firstName} ${admin.lastName}`.trim();
+  const normalizedPhone = normalizePhone(member.whatsapp);
+  const displayName = `${member.firstName} ${member.lastName}`.trim();
 
   const user = await prisma.authUser.upsert({
     where: { emailLookupHash },
     create: {
       emailEncrypted: encryptField(normalizedEmail),
       emailLookupHash,
-      firstNameEncrypted: encryptField(admin.firstName),
-      lastNameEncrypted: encryptField(admin.lastName),
+      firstNameEncrypted: encryptField(member.firstName),
+      lastNameEncrypted: encryptField(member.lastName),
       whatsappEncrypted: encryptField(normalizedPhone),
       whatsappLookupHash: hashLookup(normalizedPhone),
       status: 'active',
       emailVerified: true,
     },
     update: {
-      firstNameEncrypted: encryptField(admin.firstName),
-      lastNameEncrypted: encryptField(admin.lastName),
+      firstNameEncrypted: encryptField(member.firstName),
+      lastNameEncrypted: encryptField(member.lastName),
       whatsappEncrypted: encryptField(normalizedPhone),
       whatsappLookupHash: hashLookup(normalizedPhone),
       status: 'active',
@@ -378,7 +384,7 @@ async function ensureGlobalAdmin(
   await prisma.authCredential.upsert({
     where: { userId: user.id },
     create: { userId: user.id, passwordHash },
-    update: { passwordHash },
+    update: credentialUpdatePayload(passwordHash),
   });
 
   const membership = await prisma.authMembership.upsert({
@@ -388,6 +394,12 @@ async function ensureGlobalAdmin(
       tenantId: tenantUuid,
       status: 'active',
       approvedAt: new Date(),
+      ...(member.jobTitle
+        ? { requestedJobTitleEncrypted: encryptField(member.jobTitle) }
+        : {}),
+      ...(member.departmentText
+        ? { requestedDepartmentEncrypted: encryptField(member.departmentText) }
+        : {}),
     },
     update: {
       status: 'active',
@@ -398,10 +410,16 @@ async function ensureGlobalAdmin(
       rejectedByMembershipId: null,
       blockedAt: null,
       blockedByMembershipId: null,
+      ...(member.jobTitle
+        ? { requestedJobTitleEncrypted: encryptField(member.jobTitle) }
+        : {}),
+      ...(member.departmentText
+        ? { requestedDepartmentEncrypted: encryptField(member.departmentText) }
+        : {}),
     },
   });
 
-  const uniqueRoles = [...new Set(admin.roles)] as TenantRole[];
+  const uniqueRoles = [...new Set(member.roles)] as TenantRole[];
   await prisma.authMembershipRole.deleteMany({ where: { membershipId: membership.id } });
   if (uniqueRoles.length > 0) {
     await prisma.authMembershipRole.createMany({
@@ -416,15 +434,25 @@ async function ensureGlobalAdmin(
   });
 
   return {
-    seedKey: admin.seedKey,
+    seedKey: member.seedKey,
     userId: user.id,
-    email: admin.email,
+    email: member.email,
     displayName,
     tenantId: DEMO_GLOBAL_ADMIN_TENANT_ID,
     membershipId: membership.id,
     roles: uniqueRoles,
-    status: 'active' as const,
+    status: 'active',
+    jobTitle: member.jobTitle,
+    departmentText: member.departmentText,
   };
+}
+
+async function ensureGlobalAdmin(
+  admin: DemoGlobalAdminDef,
+  tenantUuid: string,
+  passwordHash: string,
+) {
+  return ensureActiveTenantMember(admin, tenantUuid, passwordHash);
 }
 
 export async function runDemoSeed(options: RunDemoSeedOptions = {}): Promise<RunDemoSeedResult> {
@@ -438,6 +466,13 @@ export async function runDemoSeed(options: RunDemoSeedOptions = {}): Promise<Run
 
   const adminTenant = await ensureGlobalAdminTenant();
   const globalAdmin = await ensureGlobalAdmin(DEMO_GLOBAL_ADMIN, adminTenant.id, passwordHash);
+
+  const companyDevActiveUsers: DemoSeedManifestGlobalAdmin[] = [];
+  for (const member of DEMO_COMPANY_DEV_ACTIVE_USERS) {
+    companyDevActiveUsers.push(
+      await ensureActiveTenantMember(member, adminTenant.id, passwordHash),
+    );
+  }
 
   const companies: DemoSeedManifestCompany[] = [];
 
@@ -480,6 +515,7 @@ export async function runDemoSeed(options: RunDemoSeedOptions = {}): Promise<Run
     authServiceRoot: repoRoot,
     companies,
     globalAdmin,
+    companyDevActiveUsers,
   };
 
   writeDemoSeedManifest(manifest, manifestPath);

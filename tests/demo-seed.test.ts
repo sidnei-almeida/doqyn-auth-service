@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   DEMO_COMPANIES,
+  DEMO_COMPANY_DEV_ACTIVE_USERS,
   DEMO_GLOBAL_ADMIN,
   DEMO_SEED_DEFAULT_PASSWORD,
   DEMO_SEED_SOURCE,
@@ -42,9 +43,14 @@ describe('demo seed', () => {
     }
   });
 
-  it('mantém apenas admin global ativo no manifesto planejado', () => {
+  it('define admin global e usuários ativos em company_dev', () => {
     expect(DEMO_GLOBAL_ADMIN.roles).toContain('doqyn_admin');
     expect(DEMO_GLOBAL_ADMIN.email).toBe('admin.global@doqyn.dev');
+    expect(DEMO_COMPANY_DEV_ACTIVE_USERS).toHaveLength(1);
+    expect(DEMO_COMPANY_DEV_ACTIVE_USERS[0]?.email).toBe('camila.oliveira@doqyn.dev');
+    expect(DEMO_COMPANY_DEV_ACTIVE_USERS[0]?.roles).toEqual(['user']);
+    expect(DEMO_COMPANY_DEV_ACTIVE_USERS[0]?.roles).not.toContain('company_admin');
+    expect(DEMO_COMPANY_DEV_ACTIVE_USERS[0]?.roles).not.toContain('doqyn_admin');
   });
 
   it('bloqueia demo seed em produção', () => {

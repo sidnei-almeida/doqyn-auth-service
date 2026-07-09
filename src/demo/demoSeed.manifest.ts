@@ -47,6 +47,8 @@ export type DemoSeedManifestGlobalAdmin = {
   membershipId: string;
   roles: string[];
   status: 'active';
+  jobTitle?: string;
+  departmentText?: string;
 };
 
 export type DemoSeedManifest = {
@@ -56,6 +58,7 @@ export type DemoSeedManifest = {
   authServiceRoot: string;
   companies: DemoSeedManifestCompany[];
   globalAdmin: DemoSeedManifestGlobalAdmin;
+  companyDevActiveUsers: DemoSeedManifestGlobalAdmin[];
 };
 
 export function defaultManifestPath(repoRoot = process.cwd()): string {

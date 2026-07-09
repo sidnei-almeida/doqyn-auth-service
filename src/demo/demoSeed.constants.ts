@@ -43,6 +43,8 @@ export type DemoGlobalAdminDef = {
   lastName: string;
   whatsapp: string;
   roles: Array<'doqyn_admin' | 'company_admin' | 'user'>;
+  jobTitle?: string;
+  departmentText?: string;
 };
 
 export const DEMO_ACCESS_GROUPS: DemoAccessGroupDef[] = [
@@ -61,6 +63,20 @@ export const DEMO_GLOBAL_ADMIN: DemoGlobalAdminDef = {
   whatsapp: '+5551987654321',
   roles: ['doqyn_admin', 'company_admin', 'user'],
 };
+
+/** Usuários ativos adicionais em company_dev — para testes de compartilhamento e permissões. */
+export const DEMO_COMPANY_DEV_ACTIVE_USERS: DemoGlobalAdminDef[] = [
+  {
+    seedKey: 'camila_oliveira',
+    email: 'camila.oliveira@doqyn.dev',
+    firstName: 'Camila',
+    lastName: 'Oliveira',
+    whatsapp: '+5551999887766',
+    roles: ['user'],
+    jobTitle: 'Analista de Documentos',
+    departmentText: 'Jurídico',
+  },
+];
 
 const basePending = {
   operationalNotificationsConsent: true,

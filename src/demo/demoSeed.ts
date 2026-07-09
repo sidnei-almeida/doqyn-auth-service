@@ -17,6 +17,11 @@ async function main() {
   console.log(`  Empresas: ${result.manifest.companies.length}`);
   console.log(`  Pendências de acesso: ${pendingCount}`);
   console.log(`  Admin global: ${result.manifest.globalAdmin.email} (${result.manifest.globalAdmin.tenantId})`);
+  if (result.manifest.companyDevActiveUsers.length > 0) {
+    console.log(
+      `  Usuários ativos company_dev: ${result.manifest.companyDevActiveUsers.map((u) => u.email).join(', ')}`,
+    );
+  }
   console.log(`  Senha dev (relatório): ${result.password}`);
   console.log(`  Manifest: ${result.manifestPath}`);
   console.log(`  Relatório MD: ${result.reportPaths.markdown}`);

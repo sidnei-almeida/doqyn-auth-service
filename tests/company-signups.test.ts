@@ -6,6 +6,7 @@ import { TEST_ENV } from './setup.js';
 import { hashLookup } from '../src/security/crypto.js';
 import { normalizeTaxId } from '../src/utils/normalize.js';
 import { extractCookie } from './helpers.js';
+import { DOQYN_TERMS_VERSION } from '../src/modules/terms/terms.constants.js';
 
 const mockFetch = vi.fn();
 
@@ -48,10 +49,11 @@ describe('company signups', () => {
     whatsapp: '+5554999887766',
     password: 'senha-dev-123',
     confirmPassword: 'senha-dev-123',
-    termsAccepted: true as const,
+    acceptedTerms: true as const,
+    acceptedTermsVersion: DOQYN_TERMS_VERSION,
   };
 
-  it('POST /auth/company-signups cria tenant, admin, grupos e sessão', async () => {
+  it('POST /auth/company-signups cria tenant e admin sem grupos de acesso padrão', async () => {
     const response = await app.inject({
       method: 'POST',
       url: '/auth/company-signups',
@@ -71,7 +73,8 @@ describe('company signups', () => {
     expect(tenant?.status).toBe('active');
 
     const groups = await prisma.authAccessGroup.findMany({ where: { tenantId: tenant!.id } });
-    expect(groups.length).toBe(5);
+    expect(groups.length).toBe(0);
+    expect(body.activeMembership.accessGroupIds ?? []).toEqual([]);
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
@@ -110,11 +113,29 @@ describe('company signups', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/auth/company-signups',
-      payload: { companyName: 'X' },
+      payload: {
+        ...payload,
+        companyName: 'X',
+        email: 'invalido',
+      },
     });
 
     expect(response.statusCode).toBe(400);
     expect(response.json().code).toBe('VALIDATION_ERROR');
+  });
+
+  it('cadastro sem aceite dos termos retorna TERMS_ACCEPTANCE_REQUIRED', async () => {
+    const { acceptedTerms: _acceptedTerms, acceptedTermsVersion: _version, ...withoutTerms } =
+      payload;
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/company-signups',
+      payload: { ...withoutTerms, email: 'sem-termos@example.com' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().code).toBe('TERMS_ACCEPTANCE_REQUIRED');
   });
 
   it('falha de provisionamento mantém tenant provisioning_failed', async () => {

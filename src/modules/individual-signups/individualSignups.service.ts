@@ -13,6 +13,7 @@ import {
 } from '../../utils/normalize.js';
 import { generateIndividualTenantId } from '../../utils/tenantId.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
+import { recordTermsAcceptance } from '../terms/termsAcceptance.service.js';
 import type { PublicMembership } from '../memberships/memberships.schemas.js';
 import { toPublicMembership } from '../memberships/memberships.service.js';
 import { createSession } from '../sessions/sessions.service.js';
@@ -126,6 +127,19 @@ export async function submitIndividualSignup(
     await tx.authNotificationPreference.create({
       data: { membershipId: membership.id },
     });
+
+    await recordTermsAcceptance(
+      {
+        flow: 'individual_registration',
+        termsVersion: input.acceptedTermsVersion,
+        userId: user.id,
+        membershipId: membership.id,
+        tenantId: tenant.id,
+        ipAddressHash: ipHash,
+        userAgentHash: userAgentHash,
+      },
+      tx,
+    );
 
     return { user, tenant, membership };
   });

@@ -1,6 +1,13 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
+import { formatTermsValidationResponse } from '../terms/termsAcceptance.validation.js';
+import {
+  AUTH_DATABASE_UNAVAILABLE_CODE,
+  AUTH_DATABASE_UNAVAILABLE_MESSAGE,
+  isPrismaConnectionError,
+} from '../../db/databaseHealth.js';
 import { AppError } from '../../utils/errors.js';
+import { DatabaseUnavailableError } from '../../db/databaseHealth.js';
 import {
   clearSessionCookie,
   getSessionCookieName,
@@ -32,6 +39,8 @@ import { submitCompanySignup } from '../company-signups/companySignups.service.j
 import { individualSignupSchema } from '../individual-signups/individualSignups.schemas.js';
 import { submitIndividualSignup } from '../individual-signups/individualSignups.service.js';
 import { requireSession, type AuthenticatedRequest } from '../admin/adminAuth.js';
+import { AUTH_ERROR_MESSAGES } from '../../utils/authErrorCodes.js';
+import { assertDatabaseAvailable } from '../../utils/routeErrors.js';
 
 function getSessionTokenFromRequest(request: FastifyRequest): string | undefined {
   const cookieName = getSessionCookieName();
@@ -40,26 +49,33 @@ function getSessionTokenFromRequest(request: FastifyRequest): string | undefined
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post('/auth/login', async (request, reply) => {
-    const body = loginSchema.parse(request.body);
-    const ctx = extractRequestContext(request);
+    try {
+      const body = loginSchema.parse(request.body);
+      const ctx = extractRequestContext(request);
 
-    const result = await login(body, ctx);
+      const result = await login(body, ctx);
 
-    if (!result.success) {
-      return reply.status(401).send({
-        ok: false,
-        message: result.message,
+      if (!result.success) {
+        return reply.status(result.statusCode).send({
+          ok: false,
+          code: result.code,
+          message: result.message,
+          ...(result.details ? { details: result.details } : {}),
+        });
+      }
+
+      setSessionCookie(reply, result.sessionToken, {
+        maxAgeSeconds: getSessionTtlSeconds(),
       });
+
+      return reply.send({
+        ok: true,
+        user: result.user,
+      });
+    } catch (error) {
+      assertDatabaseAvailable(error);
+      throw error;
     }
-
-    setSessionCookie(reply, result.sessionToken, {
-      maxAgeSeconds: getSessionTtlSeconds(),
-    });
-
-    return reply.send({
-      ok: true,
-      user: result.user,
-    });
   });
 
   app.post('/auth/logout', async (request, reply) => {
@@ -80,6 +96,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({
         ok: false,
         code: result.code,
+        message: AUTH_ERROR_MESSAGES[result.code as keyof typeof AUTH_ERROR_MESSAGES] ?? 'Sessão inválida.',
       });
     }
 
@@ -99,7 +116,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const result = await selectTenant(token!, authUser.id, body.tenantId, body.membershipId);
 
     if (!result.ok) {
-      return reply.status(400).send({ ok: false, message: result.message });
+      return reply.status(result.statusCode).send({
+        ok: false,
+        code: result.code,
+        message: result.message,
+      });
     }
 
     return reply.send({
@@ -113,10 +134,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post('/auth/access-requests', async (request, reply) => {
     const parsed = accessRequestSchema.safeParse(request.body);
     if (!parsed.success) {
+      const termsError = formatTermsValidationResponse(parsed.error);
       return reply.status(400).send({
         ok: false,
-        message: 'Dados inválidos.',
-        code: 'VALIDATION_ERROR',
+        message: termsError.message,
+        code: termsError.code,
       });
     }
     const ctx = extractRequestContext(request);
@@ -128,10 +150,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post('/auth/company-signups', async (request, reply) => {
     const parsed = companySignupSchema.safeParse(request.body);
     if (!parsed.success) {
+      const termsError = formatTermsValidationResponse(parsed.error);
       return reply.status(400).send({
         ok: false,
-        message: 'Dados inválidos.',
-        code: 'VALIDATION_ERROR',
+        message: termsError.message,
+        code: termsError.code,
       });
     }
     const ctx = extractRequestContext(request);
@@ -154,10 +177,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post('/auth/individual-signups', async (request, reply) => {
     const parsed = individualSignupSchema.safeParse(request.body);
     if (!parsed.success) {
+      const termsError = formatTermsValidationResponse(parsed.error);
       return reply.status(400).send({
         ok: false,
-        message: 'Dados inválidos.',
-        code: 'VALIDATION_ERROR',
+        message: termsError.message,
+        code: termsError.code,
       });
     }
     const ctx = extractRequestContext(request);
@@ -260,7 +284,21 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
 export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((error, _request, reply) => {
-    if (error instanceof AppError) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === 'FST_ERR_CTP_EMPTY_JSON_BODY'
+    ) {
+      return reply.status(400).send({
+        ok: false,
+        message:
+          'Corpo JSON ausente. Envie {} ou omita o header Content-Type: application/json em requisições sem corpo.',
+        code: 'EMPTY_JSON_BODY',
+      });
+    }
+
+    if (error instanceof AppError || error instanceof DatabaseUnavailableError) {
       return reply.status(error.statusCode).send({
         ok: false,
         message: error.message,
@@ -273,6 +311,14 @@ export function registerErrorHandler(app: FastifyInstance): void {
         ok: false,
         message: 'Dados inválidos.',
         code: 'VALIDATION_ERROR',
+      });
+    }
+
+    if (isPrismaConnectionError(error)) {
+      return reply.status(503).send({
+        ok: false,
+        message: AUTH_DATABASE_UNAVAILABLE_MESSAGE,
+        code: AUTH_DATABASE_UNAVAILABLE_CODE,
       });
     }
 

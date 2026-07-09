@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { TenantRole } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
-import { ForbiddenError } from '../../utils/errors.js';
+import { ForbiddenError, UnauthorizedError } from '../../utils/errors.js';
 import { hashSessionToken } from '../../security/crypto.js';
 import { getSessionCookieName } from '../../security/cookies.js';
 import { validateSessionByToken } from '../sessions/sessions.service.js';
@@ -30,12 +30,12 @@ export async function requireSession(
 ): Promise<void> {
   const token = getSessionToken(request);
   if (!token) {
-    throw new ForbiddenError('Sessão necessária.');
+    throw new UnauthorizedError('Faça login para continuar.', 'AUTH_REQUIRED');
   }
 
   const result = await validateSessionByToken(token);
   if (!result.valid) {
-    throw new ForbiddenError('Sessão inválida.');
+    throw new UnauthorizedError('Sua sessão expirou. Faça login novamente.', 'SESSION_EXPIRED');
   }
 
   request.authUser = result.user;

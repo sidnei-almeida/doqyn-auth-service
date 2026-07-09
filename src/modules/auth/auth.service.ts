@@ -29,9 +29,10 @@ import {
   isUserLoginAllowed,
   toPublicUser,
 } from '../users/users.service.js';
+import type { AuthErrorCode } from '../../utils/authErrorCodes.js';
+import { AUTH_ERROR_MESSAGES } from '../../utils/authErrorCodes.js';
+import { resolveMembershipAccessError } from '../../utils/membershipAccessErrors.js';
 import type { LoginInput } from './auth.schemas.js';
-
-const GENERIC_LOGIN_ERROR = 'E-mail ou senha inválidos.';
 const GENERIC_RESET_MESSAGE =
   'Se o e-mail existir, enviaremos instruções para redefinir a senha.';
 
@@ -59,7 +60,10 @@ export interface LoginResult {
 
 export interface LoginFailure {
   success: false;
+  code: AuthErrorCode;
   message: string;
+  statusCode: number;
+  details?: Record<string, unknown>;
 }
 
 export async function login(
@@ -73,7 +77,12 @@ export async function login(
     checkLoginRateLimit(ctx.ipHash, emailLookupHash);
   } catch {
     await recordLoginAttempt(emailLookupHash, ctx.ipHash, false, 'rate_limit');
-    return { success: false, message: GENERIC_LOGIN_ERROR };
+    return {
+      success: false,
+      code: 'RATE_LIMIT',
+      message: AUTH_ERROR_MESSAGES.RATE_LIMIT,
+      statusCode: 429,
+    };
   }
 
   const user = await findUserByEmailLookup(normalizedEmail);
@@ -85,7 +94,12 @@ export async function login(
       userAgentHash: ctx.userAgentHash,
       metadata: { reason: 'user_not_found' },
     });
-    return { success: false, message: GENERIC_LOGIN_ERROR };
+    return {
+      success: false,
+      code: 'INVALID_CREDENTIALS',
+      message: AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS,
+      statusCode: 401,
+    };
   }
 
   if (!isUserLoginAllowed(user.status)) {
@@ -96,7 +110,12 @@ export async function login(
       userAgentHash: ctx.userAgentHash,
       metadata: { reason: 'user_disabled' },
     });
-    return { success: false, message: GENERIC_LOGIN_ERROR };
+    return {
+      success: false,
+      code: 'USER_DISABLED',
+      message: AUTH_ERROR_MESSAGES.USER_DISABLED,
+      statusCode: 403,
+    };
   }
 
   const credential = await getUserCredential(user.id);
@@ -108,7 +127,12 @@ export async function login(
       userAgentHash: ctx.userAgentHash,
       metadata: { reason: 'no_credential' },
     });
-    return { success: false, message: GENERIC_LOGIN_ERROR };
+    return {
+      success: false,
+      code: 'INVALID_CREDENTIALS',
+      message: AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS,
+      statusCode: 401,
+    };
   }
 
   const passwordValid = await verifyPassword(input.password, credential.passwordHash);
@@ -120,7 +144,37 @@ export async function login(
       userAgentHash: ctx.userAgentHash,
       metadata: { reason: 'invalid_password' },
     });
-    return { success: false, message: GENERIC_LOGIN_ERROR };
+    return {
+      success: false,
+      code: 'INVALID_CREDENTIALS',
+      message: AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS,
+      statusCode: 401,
+    };
+  }
+
+  const { listUserMemberships } = await import('../memberships/memberships.service.js');
+  const memberships = await listUserMemberships(user.id);
+  const activeMemberships = memberships.filter(
+    (membership) => membership.status === 'active' && membership.tenant.status === 'active',
+  );
+  const visibleMemberships = memberships.filter((membership) => membership.status !== 'removed');
+
+  if (activeMemberships.length === 0 && visibleMemberships.length > 0) {
+    const accessError = resolveMembershipAccessError(memberships);
+    await recordLoginAttempt(emailLookupHash, ctx.ipHash, false, accessError.code);
+    await logAuthAudit('login.failed', {
+      userId: user.id,
+      ipHash: ctx.ipHash,
+      userAgentHash: ctx.userAgentHash,
+      metadata: { reason: accessError.code, ...accessError.details },
+    });
+    return {
+      success: false,
+      code: accessError.code,
+      message: accessError.message,
+      statusCode: accessError.statusCode,
+      details: accessError.details,
+    };
   }
 
   const session = await createSession(user.id, ctx.ipHash, ctx.userAgentHash);
@@ -130,10 +184,7 @@ export async function login(
     data: { lastLoginAt: new Date() },
   });
 
-  const { listUserMemberships } = await import('../memberships/memberships.service.js');
   const { hashSessionToken } = await import('../../security/crypto.js');
-  const memberships = await listUserMemberships(user.id);
-  const activeMemberships = memberships.filter((m) => m.status === 'active');
   if (activeMemberships.length === 1) {
     await prisma.authSession.update({
       where: { sessionTokenHash: hashSessionToken(session.token) },
@@ -200,17 +251,30 @@ export async function selectTenant(
   userId: string,
   tenantId?: string,
   membershipId?: string,
-): Promise<{ ok: true; context: SessionContext } | { ok: false; message: string }> {
+): Promise<
+  | { ok: true; context: SessionContext }
+  | { ok: false; code: string; message: string; statusCode: number }
+> {
   const { selectTenantForSession } = await import('../admin/adminAuth.js');
   const success = await selectTenantForSession(userId, sessionToken, tenantId, membershipId);
 
   if (!success) {
-    return { ok: false, message: 'Membership não encontrada.' };
+    return {
+      ok: false,
+      code: 'MEMBERSHIP_NOT_FOUND',
+      message: AUTH_ERROR_MESSAGES.MEMBERSHIP_NOT_FOUND,
+      statusCode: 404,
+    };
   }
 
   const result = await validateSessionByToken(sessionToken);
   if (!result.valid) {
-    return { ok: false, message: 'Sessão inválida.' };
+    return {
+      ok: false,
+      code: 'INVALID_SESSION',
+      message: AUTH_ERROR_MESSAGES.INVALID_SESSION,
+      statusCode: 401,
+    };
   }
 
   const session = await getSessionRecordByToken(sessionToken);

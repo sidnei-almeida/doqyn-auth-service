@@ -1,6 +1,10 @@
 import type { Prisma } from '@prisma/client';
 import { encryptField } from '../../security/crypto.js';
 
+/**
+ * Definições legadas de grupos de negócio — NÃO usadas no signup nem no seed.
+ * Mantidas apenas para testes que criam grupos explicitamente via helper.
+ */
 export const DEFAULT_BUSINESS_GROUP_DEFS = [
   { groupId: 'group_financeiro', name: 'Financeiro', slug: 'financeiro' },
   { groupId: 'group_juridico', name: 'Jurídico', slug: 'juridico' },

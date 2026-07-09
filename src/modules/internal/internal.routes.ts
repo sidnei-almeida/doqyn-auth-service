@@ -1,10 +1,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { loadEnv } from '../../config/env.js';
 import { ForbiddenError } from '../../utils/errors.js';
+import { AUTH_ERROR_MESSAGES } from '../../utils/authErrorCodes.js';
 import { emailParamSchema, userIdParamSchema } from '../users/users.schemas.js';
 import { membershipIdParamSchema } from '../admin/admin.schemas.js';
 import {
   createInternalUserSchema,
+  updateUserAvatarMetadataSchema,
   verifySessionInternalSchema,
 } from './internal.schemas.js';
 import {
@@ -15,9 +17,12 @@ import {
   internalGetMembership,
   internalGetTenant,
   internalGetTenantAccessGroups,
+  internalGetUserAvatarMetadata,
   internalGetUserOrThrow,
+  internalUpdateUserAvatarMetadata,
   internalVerifySession,
 } from './internal.service.js';
+import { assertDatabaseAvailable } from '../../utils/routeErrors.js';
 
 function verifyInternalApiKey(request: FastifyRequest): void {
   const env = loadEnv();
@@ -91,6 +96,19 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
+  app.patch('/internal/users/:id/avatar-metadata', async (request, reply) => {
+    const params = userIdParamSchema.parse(request.params);
+    const body = updateUserAvatarMetadataSchema.parse(request.body);
+    const user = await internalUpdateUserAvatarMetadata(params.id, body);
+    return reply.send({ ok: true, user });
+  });
+
+  app.get('/internal/users/:id/avatar-metadata', async (request, reply) => {
+    const params = userIdParamSchema.parse(request.params);
+    const metadata = await internalGetUserAvatarMetadata(params.id);
+    return reply.send({ ok: true, metadata });
+  });
+
   app.get('/internal/users/:userId', async (request, reply) => {
     const params = userIdParamSchema.parse({ id: (request.params as { userId: string }).userId });
     const user = await internalGetUserOrThrow(params.id);
@@ -98,22 +116,30 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/internal/sessions/verify', async (request, reply) => {
-    const body = verifySessionInternalSchema.parse(request.body);
-    const result = await internalVerifySession(body.sessionToken);
+    try {
+      const body = verifySessionInternalSchema.parse(request.body);
+      const result = await internalVerifySession(body.sessionToken);
 
-    if (!result.ok) {
+      if (!result.ok) {
+        return reply.send({
+          ok: false,
+          code: result.code,
+          message:
+            AUTH_ERROR_MESSAGES[result.code as keyof typeof AUTH_ERROR_MESSAGES] ??
+            'Sessão inválida.',
+        });
+      }
+
       return reply.send({
-        ok: false,
-        code: result.code,
+        ok: true,
+        user: result.user,
+        activeMembership: result.activeMembership,
+        memberships: result.memberships,
       });
+    } catch (error) {
+      assertDatabaseAvailable(error);
+      throw error;
     }
-
-    return reply.send({
-      ok: true,
-      user: result.user,
-      activeMembership: result.activeMembership,
-      memberships: result.memberships,
-    });
   });
 
   app.get('/internal/tenants/:tenantId', async (request, reply) => {

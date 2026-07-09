@@ -9,7 +9,10 @@ import {
   disableUser,
   enableUser,
   findUserByEmailLookup,
+  getUserAvatarMetadata,
   toPublicUser,
+  updateUserAvatarMetadata,
+  type UpdateUserAvatarMetadataInput,
 } from '../users/users.service.js';
 import type { CreateUserInput } from '../users/users.service.js';
 import type { PublicUser } from '../users/users.schemas.js';
@@ -96,4 +99,30 @@ export async function internalGetMembership(membershipId: string) {
     throw new NotFoundError('Membership não encontrada.');
   }
   return toPublicMembership(membership);
+}
+
+export async function internalUpdateUserAvatarMetadata(
+  userId: string,
+  input: UpdateUserAvatarMetadataInput,
+) {
+  const { findUserById } = await import('../users/users.service.js');
+  const existing = await findUserById(userId);
+  if (!existing) {
+    throw new NotFoundError('Usuário não encontrado.');
+  }
+
+  const user = await updateUserAvatarMetadata(userId, input);
+  await logAuthAudit(
+    input.status === 'removed' ? 'user.avatar_removed' : 'user.avatar_updated',
+    { userId, metadata: { version: input.version } },
+  );
+  return user;
+}
+
+export async function internalGetUserAvatarMetadata(userId: string) {
+  const metadata = await getUserAvatarMetadata(userId);
+  if (!metadata) {
+    throw new NotFoundError('Usuário não encontrado.');
+  }
+  return metadata;
 }

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { normalizeTaxId } from '../../utils/normalize.js';
+import { termsAcceptanceFields } from '../terms/termsAcceptance.schemas.js';
 
 function isValidCnpj(taxId: string): boolean {
   return normalizeTaxId(taxId).length === 14;
@@ -15,9 +16,7 @@ export const companySignupSchema = z
     whatsapp: z.string().min(8, 'Informe um WhatsApp válido.'),
     password: z.string().min(8, 'A senha deve ter pelo menos 8 caracteres.'),
     confirmPassword: z.string().min(8),
-    termsAccepted: z.literal(true, {
-      errorMap: () => ({ message: 'É necessário aceitar os termos.' }),
-    }),
+    ...termsAcceptanceFields,
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: 'As senhas não conferem.',

@@ -38,8 +38,10 @@ import {
   adminListQuerySchema,
   adminTenantsQuerySchema,
   approveMembershipSchema,
+  blockMembershipSchema,
   createTenantAdminSchema,
   membershipIdParamSchema,
+  rejectMembershipSchema,
   tenantIdParamSchema,
   transferAdminSchema,
   updateMemberAccessGroupsSchema,
@@ -106,11 +108,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/auth/admin/members/:membershipId/reject', async (request, reply) => {
     const params = membershipIdParamSchema.parse(request.params);
+    const body = rejectMembershipSchema.parse(request.body ?? {});
     const ctx = extractRequestContext(request);
     const actor = (request as AuthenticatedRequest).adminActor!;
     const membership = await rejectMembership(
       actor,
       params.membershipId,
+      body,
       ctx.ipHash,
       ctx.userAgentHash,
     );
@@ -119,11 +123,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/auth/admin/members/:membershipId/block', async (request, reply) => {
     const params = membershipIdParamSchema.parse(request.params);
+    const body = blockMembershipSchema.parse(request.body ?? {});
     const ctx = extractRequestContext(request);
     const actor = (request as AuthenticatedRequest).adminActor!;
     const membership = await blockMembership(
       actor,
       params.membershipId,
+      body,
       ctx.ipHash,
       ctx.userAgentHash,
     );

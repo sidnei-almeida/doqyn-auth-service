@@ -49,16 +49,44 @@ API independente usada pelo frontend DOQYN e pela API principal. O usuário fina
 
 ## Como rodar localmente
 
+Fluxo recomendado (sobe Postgres automaticamente, valida Prisma e inicia o serviço):
+
 ```bash
 npm install
 cp .env.example .env
-docker compose up -d postgres-auth
-npm run prisma:migrate
-npm run db:seed        # apenas desenvolvimento (local)
-# ou após build Docker:
-npm run db:seed:docker
 npm run dev
 ```
+
+O comando `npm run dev`:
+1. garante que o Postgres dev (`postgres-auth`) esteja rodando via Docker;
+2. espera o banco responder em `127.0.0.1:5433`;
+3. valida conexão Prisma (`SELECT 1`);
+4. só então inicia o auth-service na porta `4100`.
+
+Comandos úteis:
+
+```bash
+npm run dev:db            # sobe somente Postgres (postgres-auth)
+npm run dev:db:status     # status do container
+npm run dev:db:logs       # logs do Postgres
+npm run audit:auth-health # diagnóstico seguro do banco
+npm run dev:server        # sobe só o servidor (sem garantir Postgres)
+npm run dev:local         # Postgres + migrations + servidor
+```
+
+Primeira vez ou após clone (migrations + seed opcional):
+
+```bash
+npm run dev:local         # inclui npx prisma migrate deploy
+npm run db:seed           # apenas desenvolvimento, manual
+```
+
+> **Importante:** `npm run dev` **não** roda seed nem reset de senha automaticamente.
+> Use `SEED_FORCE_PASSWORD_RESET=true npm run db:seed` apenas se quiser sobrescrever senhas dev existentes.
+
+> **Cuidado com testes:** se `TEST_DATABASE_URL` não estiver configurado, `npm test` usa o mesmo `DATABASE_URL` de dev e apaga users/tenants no `beforeEach`. Configure um banco separado em `.env` ou use `npm run audit:auth-storage` para diagnosticar banco vazio.
+
+> **Evite** `docker compose up -d` sem filtro — isso também sobe `auth-api` na porta `4100` e compete com `npm run dev`.
 
 Documentação completa da API admin: [docs/AUTH_ADMIN_API.md](docs/AUTH_ADMIN_API.md).
 

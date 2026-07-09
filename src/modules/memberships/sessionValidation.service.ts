@@ -2,9 +2,16 @@ import type { PublicMembership } from './memberships.schemas.js';
 import type { PublicUser } from '../users/users.schemas.js';
 import { findMembershipById } from './memberships.service.js';
 
+import { membershipStatusToErrorCode } from '../../utils/membershipAccessErrors.js';
+
 export type SessionBlockCode =
   | 'USER_NOT_ACTIVE'
+  | 'TENANT_INACTIVE'
   | 'TENANT_NOT_ACTIVE'
+  | 'MEMBERSHIP_PENDING'
+  | 'MEMBERSHIP_BLOCKED'
+  | 'MEMBERSHIP_REJECTED'
+  | 'MEMBERSHIP_REMOVED'
   | 'MEMBERSHIP_NOT_ACTIVE'
   | 'INVALID_SESSION';
 
@@ -17,10 +24,10 @@ export function isMembershipUsable(
   tenantStatus: string,
 ): { ok: true } | { ok: false; code: SessionBlockCode } {
   if (tenantStatus !== 'active') {
-    return { ok: false, code: 'TENANT_NOT_ACTIVE' };
+    return { ok: false, code: 'TENANT_INACTIVE' };
   }
   if (membership.status !== 'active') {
-    return { ok: false, code: 'MEMBERSHIP_NOT_ACTIVE' };
+    return { ok: false, code: membershipStatusToErrorCode(membership.status) as SessionBlockCode };
   }
   return { ok: true };
 }

@@ -13,8 +13,8 @@ import {
   slugify,
 } from '../../utils/normalize.js';
 import { generateBusinessTenantId } from '../../utils/tenantId.js';
-import { ensureDefaultBusinessAccessGroups } from '../access-groups/defaultAccessGroups.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
+import { recordTermsAcceptance } from '../terms/termsAcceptance.service.js';
 import { toPublicMembership } from '../memberships/memberships.service.js';
 import type { PublicMembership } from '../memberships/memberships.schemas.js';
 import { buildSessionContext } from '../memberships/sessionContext.service.js';
@@ -127,17 +127,22 @@ export async function submitCompanySignup(
       ],
     });
 
-    const groups = await ensureDefaultBusinessAccessGroups(tx, tenant.id);
-    const diretoria = groups.find((g) => g.groupId === 'group_diretoria');
-    if (diretoria) {
-      await tx.authMembershipAccessGroup.create({
-        data: { membershipId: membership.id, accessGroupId: diretoria.id },
-      });
-    }
-
     await tx.authNotificationPreference.create({
       data: { membershipId: membership.id },
     });
+
+    await recordTermsAcceptance(
+      {
+        flow: 'company_registration',
+        termsVersion: input.acceptedTermsVersion,
+        userId: user.id,
+        membershipId: membership.id,
+        tenantId: tenant.id,
+        ipAddressHash: ipHash,
+        userAgentHash: userAgentHash,
+      },
+      tx,
+    );
 
     return { user, tenant, membership };
   });
@@ -153,7 +158,6 @@ export async function submitCompanySignup(
   await logAuthAudit('company_signup.requested', auditBase);
   await logAuthAudit('company_signup.tenant_created', auditBase);
   await logAuthAudit('company_signup.admin_created', auditBase);
-  await logAuthAudit('company_signup.default_groups_created', auditBase);
   await logAuthAudit('company_signup.provision_started', auditBase);
 
   const provision = await provisionTenantInMainApp({

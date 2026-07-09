@@ -25,6 +25,9 @@ export const publicUserSchema = z.object({
   status: z.enum(['active', 'disabled', 'pending_verification', 'anonymized']),
   emailVerified: z.boolean().optional(),
   lastLoginAt: z.string().datetime().nullable().optional(),
+  avatarVersion: z.number().int().nonnegative().optional(),
+  avatarUpdatedAt: z.string().datetime().nullable().optional(),
+  avatarStatus: z.enum(['active', 'removed']).nullable().optional(),
 });
 
 export type PublicUser = z.infer<typeof publicUserSchema>;

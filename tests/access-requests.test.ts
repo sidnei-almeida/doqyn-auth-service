@@ -4,6 +4,9 @@ import { buildApp } from '../src/app.js';
 import { prisma } from '../src/db/prisma.js';
 import { encryptField, hashLookup } from '../src/security/crypto.js';
 import { detectTaxIdType, maskTaxId, normalizeTaxId } from '../src/utils/normalize.js';
+import { getSessionCookieName } from '../src/security/cookies.js';
+import { loginUser, createTestUser, createTestMembership, assignRoles } from './helpers.js';
+import { DOQYN_TERMS_VERSION } from '../src/modules/terms/terms.constants.js';
 import { TEST_ENV } from './setup.js';
 
 describe('access requests', () => {
@@ -48,6 +51,8 @@ describe('access requests', () => {
     departmentText: 'Financeiro',
     reason: 'Preciso acessar documentos.',
     operationalNotificationsConsent: true,
+    acceptedTerms: true as const,
+    acceptedTermsVersion: DOQYN_TERMS_VERSION,
   };
 
   it('/auth/access-requests cria user, membership pending e request pending em tenant existente', async () => {
@@ -155,5 +160,120 @@ describe('access requests', () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json().code).toBe('TENANT_NOT_BUSINESS');
+  });
+
+  it('GET admin access-requests retorna detalhes completos sem senha', async () => {
+    await app.inject({
+      method: 'POST',
+      url: '/auth/access-requests',
+      payload,
+    });
+
+    const tenant = await prisma.authTenant.findFirst({
+      where: { tenantId: 'company_access_test' },
+    });
+    expect(tenant).toBeTruthy();
+
+    const cookieName = getSessionCookieName();
+    const adminUser = await createTestUser('admin.access.list@empresa.com', 'senha-segura-123');
+    const adminMembership = await createTestMembership(adminUser.id, tenant!.id, 'active');
+    await assignRoles(adminMembership.id, ['company_admin']);
+    await prisma.authNotificationPreference.create({
+      data: { membershipId: adminMembership.id },
+    });
+
+    const { token: adminToken } = await loginUser(
+      app,
+      'admin.access.list@empresa.com',
+      'senha-segura-123',
+      cookieName,
+    );
+
+    await app.inject({
+      method: 'POST',
+      url: '/auth/select-tenant',
+      headers: { cookie: `${cookieName}=${adminToken}` },
+      payload: { membershipId: adminMembership.id },
+    });
+
+    const listResponse = await app.inject({
+      method: 'GET',
+      url: '/auth/admin/access-requests?status=pending',
+      headers: { cookie: `${cookieName}=${adminToken}` },
+    });
+
+    expect(listResponse.statusCode).toBe(200);
+    const body = listResponse.json();
+    expect(body.requests.length).toBeGreaterThan(0);
+    const request = body.requests[0];
+    expect(request.requester.email).toBe(payload.email);
+    expect(request.requestedAccess.jobTitle).toBe(payload.jobTitle);
+    expect(request.requestedAccess.departmentText).toBe(payload.departmentText);
+    expect(request.requestedAccess.reason).toBe(payload.reason);
+    expect(request.consent?.operationalNotificationsConsent).toBe(true);
+    expect(request.terms?.accepted).toBe(true);
+    expect(request.terms?.version).toBe(DOQYN_TERMS_VERSION);
+    expect(JSON.stringify(request)).not.toMatch(/password/i);
+    expect(JSON.stringify(request)).not.toMatch(/passwordHash/i);
+  });
+
+  it('persiste consentTextVersion na solicitação', async () => {
+    await app.inject({
+      method: 'POST',
+      url: '/auth/access-requests',
+      payload: { ...payload, email: 'consent@empresa.com' },
+    });
+
+    const stored = await prisma.authAccessRequest.findFirst({
+      where: { status: 'pending' },
+      orderBy: { requestedAt: 'desc' },
+    });
+
+    expect(stored?.consentTextVersion).toBe('operational-notifications-v1');
+  });
+
+  it('persiste aceite de termos na solicitação', async () => {
+    await app.inject({
+      method: 'POST',
+      url: '/auth/access-requests',
+      payload: { ...payload, email: 'terms@empresa.com' },
+    });
+
+    const acceptance = await prisma.authTermsAcceptance.findFirst({
+      where: { flow: 'access_request' },
+      orderBy: { acceptedAt: 'desc' },
+    });
+
+    expect(acceptance?.termsVersion).toBe(DOQYN_TERMS_VERSION);
+    expect(acceptance?.accessRequestId).toBeTruthy();
+  });
+
+  it('rejeita solicitação sem acceptedTerms', async () => {
+    const { acceptedTerms: _acceptedTerms, acceptedTermsVersion: _version, ...withoutTerms } =
+      payload;
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/access-requests',
+      payload: { ...withoutTerms, email: 'sem-termos@empresa.com' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().code).toBe('TERMS_ACCEPTANCE_REQUIRED');
+  });
+
+  it('rejeita versão inválida dos termos', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/access-requests',
+      payload: {
+        ...payload,
+        email: 'versao-invalida@empresa.com',
+        acceptedTermsVersion: 'v0.9-old',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().code).toBe('TERMS_VERSION_INVALID');
   });
 });

@@ -15,7 +15,9 @@ import {
   normalizeTaxId,
 } from '../../utils/normalize.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
+import { recordTermsAcceptance } from '../terms/termsAcceptance.service.js';
 import type { AccessRequestInput } from './accessRequests.schemas.js';
+import { CONSENT_TEXT_VERSION } from './accessRequests.constants.js';
 
 const SUCCESS_MESSAGE =
   'Sua solicitação foi enviada. Um administrador da empresa precisará aprovar seu acesso.';
@@ -148,8 +150,10 @@ export async function submitAccessRequest(
       },
     });
 
+    let accessRequestId: string;
+
     if (!existingRequest) {
-      await tx.authAccessRequest.create({
+      const createdRequest = await tx.authAccessRequest.create({
         data: {
           userId: user.id,
           tenantId: tenant.id,
@@ -164,9 +168,43 @@ export async function submitAccessRequest(
           departmentEncrypted: encryptField(input.departmentText),
           reasonEncrypted: encryptField(input.reason),
           operationalNotificationsConsent: input.operationalNotificationsConsent,
+          consentTextVersion: CONSENT_TEXT_VERSION,
         },
       });
+      accessRequestId = createdRequest.id;
+    } else {
+      await tx.authAccessRequest.update({
+        where: { id: existingRequest.id },
+        data: {
+          personType: input.personType,
+          taxIdType: detectTaxIdType(taxId),
+          taxIdMasked: maskTaxId(taxId),
+          taxIdHash,
+          tenantDisplayNameEncrypted: encryptField(tenantDisplayName),
+          jobTitleEncrypted: encryptField(input.jobTitle),
+          departmentEncrypted: encryptField(input.departmentText),
+          reasonEncrypted: encryptField(input.reason),
+          operationalNotificationsConsent: input.operationalNotificationsConsent,
+          consentTextVersion: CONSENT_TEXT_VERSION,
+          requestedAt: new Date(),
+        },
+      });
+      accessRequestId = existingRequest.id;
     }
+
+    await recordTermsAcceptance(
+      {
+        flow: 'access_request',
+        termsVersion: input.acceptedTermsVersion,
+        userId: user.id,
+        membershipId: membership.id,
+        tenantId: tenant.id,
+        accessRequestId,
+        ipAddressHash: ipHash,
+        userAgentHash: userAgentHash,
+      },
+      tx,
+    );
 
     await tx.authNotificationPreference.upsert({
       where: { membershipId: membership.id },

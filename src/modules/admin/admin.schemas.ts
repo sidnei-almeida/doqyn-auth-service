@@ -17,6 +17,23 @@ export const approveMembershipSchema = z.object({
   notificationPreferences: notificationPreferencesSchema.optional(),
 });
 
+export const rejectMembershipSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(1, 'Informe o motivo da rejeição.')
+    .max(500, 'O motivo deve ter no máximo 500 caracteres.'),
+});
+
+export const blockMembershipSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .max(300, 'O motivo deve ter no máximo 300 caracteres.')
+    .optional(),
+  notifyUser: z.boolean().optional().default(false),
+});
+
 export const updateMemberRolesSchema = z.object({
   roles: z.array(z.enum(['doqyn_admin', 'company_admin', 'individual_admin', 'user'])).min(1),
 });
@@ -104,4 +121,5 @@ export const selectTenantSchema = z
   });
 
 export type ApproveMembershipInput = z.infer<typeof approveMembershipSchema>;
+export type BlockMembershipInput = z.infer<typeof blockMembershipSchema>;
 export type AdminRole = TenantRole;

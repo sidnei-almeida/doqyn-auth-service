@@ -1,8 +1,15 @@
 import type { MembershipStatus, TenantRole } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
-import { decryptField } from '../../security/crypto.js';
-import { ForbiddenError, NotFoundError } from '../../utils/errors.js';
+import { decryptField, encryptField } from '../../security/crypto.js';
+import { ForbiddenError, NotFoundError, ValidationError } from '../../utils/errors.js';
 import { normalizeEmail } from '../../utils/normalize.js';
+import {
+  buildConsentFromRecord,
+  buildNotificationPreferencesDto,
+  buildRequestedAccessFromRecord,
+  serializeAdminAccessRequest,
+} from '../access-requests/accessRequests.admin.js';
+import { listTermsAcceptancesForAccessRequests } from '../terms/termsAcceptance.service.js';
 import {
   auditCtx,
   logAuthAudit,
@@ -154,17 +161,32 @@ export async function getMemberDetail(
   const user = await findUserById(membership.userId);
   if (!user) throw new NotFoundError('Usuário não encontrado.');
 
+  const [accessRequest, notificationPreferences] = await Promise.all([
+    prisma.authAccessRequest.findFirst({
+      where: { membershipId },
+      orderBy: { requestedAt: 'desc' },
+    }),
+    prisma.authNotificationPreference.findUnique({
+      where: { membershipId },
+    }),
+  ]);
+
+  const tenantDisplayName = membership.tenant.displayNameEncrypted
+    ? decryptField(membership.tenant.displayNameEncrypted)
+    : null;
+
   return {
     user: toPublicUser(user),
     membership: toPublicMembership(membership),
     tenant: {
       tenantId: membership.tenant.tenantId,
       tenantType: membership.tenant.tenantType,
-      displayName: membership.tenant.displayNameEncrypted
-        ? decryptField(membership.tenant.displayNameEncrypted)
-        : null,
+      displayName: tenantDisplayName,
       status: membership.tenant.status,
     },
+    requestedAccess: accessRequest ? buildRequestedAccessFromRecord(accessRequest) : undefined,
+    consent: accessRequest ? buildConsentFromRecord(accessRequest) : undefined,
+    notificationPreferences: buildNotificationPreferencesDto(notificationPreferences) ?? undefined,
     createdAt: membership.createdAt.toISOString(),
     updatedAt: membership.updatedAt.toISOString(),
     lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
@@ -363,11 +385,14 @@ export async function approveMembership(
 export async function rejectMembership(
   actor: AdminActor,
   targetMembershipId: string,
+  input: { reason: string },
   ipHash?: string,
   userAgentHash?: string,
 ): Promise<PublicMembership> {
   const target = await assertCanManageMembership(actor, targetMembershipId);
   const now = new Date();
+  const reason = input.reason.trim().slice(0, 500);
+  const rejectedReasonEncrypted = encryptField(reason);
 
   await prisma.$transaction(async (tx) => {
     await tx.authMembership.update({
@@ -376,6 +401,7 @@ export async function rejectMembership(
         status: 'rejected',
         rejectedAt: now,
         rejectedByMembershipId: actor.membership.membershipId,
+        rejectedReasonEncrypted,
       },
     });
 
@@ -397,6 +423,7 @@ export async function rejectMembership(
       tenantTextId: target.tenant.tenantId,
       ipHash,
       userAgentHash,
+      metadata: { reasonLength: reason.length },
     }),
   );
 
@@ -407,11 +434,21 @@ export async function rejectMembership(
 export async function blockMembership(
   actor: AdminActor,
   targetMembershipId: string,
+  input?: { reason?: string; notifyUser?: boolean },
   ipHash?: string,
   userAgentHash?: string,
 ): Promise<PublicMembership> {
   const target = await assertCanManageMembership(actor, targetMembershipId);
   assertNotSelfSensitive(actor, targetMembershipId, target.userId);
+
+  if (target.status === 'blocked') {
+    const updated = await findMembershipById(targetMembershipId);
+    return toPublicMembership(updated!);
+  }
+
+  await assertLastAdminProtection(target.tenantId, targetMembershipId, []);
+
+  const reason = input?.reason?.trim().slice(0, 300);
 
   await prisma.authMembership.update({
     where: { id: targetMembershipId },
@@ -422,7 +459,7 @@ export async function blockMembership(
     },
   });
 
-  await revokeSessionsByActiveMembership(targetMembershipId);
+  const revokedSessionsCount = await revokeSessionsByActiveMembership(targetMembershipId);
 
   await logAuthAudit(
     'membership.blocked',
@@ -432,6 +469,11 @@ export async function blockMembership(
       tenantTextId: target.tenant.tenantId,
       ipHash,
       userAgentHash,
+      metadata: {
+        ...(reason ? { reason } : {}),
+        notifyUser: input?.notifyUser ?? false,
+        revokedSessionsCount,
+      },
     }),
   );
 
@@ -446,6 +488,18 @@ export async function unblockMembership(
   userAgentHash?: string,
 ): Promise<PublicMembership> {
   const target = await assertCanManageMembership(actor, targetMembershipId);
+
+  if (target.status === 'active') {
+    const updated = await findMembershipById(targetMembershipId);
+    return toPublicMembership(updated!);
+  }
+
+  if (target.status !== 'blocked') {
+    throw new ValidationError(
+      'Somente memberships bloqueadas podem ser desbloqueadas.',
+      'MEMBERSHIP_NOT_BLOCKED',
+    );
+  }
 
   await prisma.authMembership.update({
     where: { id: targetMembershipId },
@@ -488,17 +542,43 @@ export async function listAccessRequestsForAdmin(
       ...(status ? { status: status as 'pending' | 'approved' | 'rejected' | 'cancelled' } : {}),
       ...(tenantFilter ? { tenant: { tenantId: tenantFilter } } : {}),
     },
-    include: { tenant: true, membership: true },
+    include: {
+      tenant: true,
+      user: true,
+    },
     orderBy: { requestedAt: 'desc' },
   });
 
-  return requests.map((r) => ({
-    id: r.id,
-    status: r.status,
-    personType: r.personType,
-    taxIdMasked: r.taxIdMasked,
-    tenantId: r.tenant.tenantId,
-    membershipId: r.membershipId,
-    requestedAt: r.requestedAt,
-  }));
+  const membershipIds = requests
+    .map((request) => request.membershipId)
+    .filter((id): id is string => Boolean(id));
+
+  const notificationPreferences = membershipIds.length
+    ? await prisma.authNotificationPreference.findMany({
+        where: { membershipId: { in: membershipIds } },
+      })
+    : [];
+
+  const prefsByMembership = new Map(
+    notificationPreferences.map((prefs) => [prefs.membershipId, prefs]),
+  );
+
+  const termsByRequest = await listTermsAcceptancesForAccessRequests(
+    requests.map((request) => request.id),
+  );
+
+  return requests.map((request) =>
+    serializeAdminAccessRequest({
+      request,
+      user: request.user,
+      tenantTextId: request.tenant.tenantId,
+      tenantDisplayName: request.tenant.displayNameEncrypted
+        ? decryptField(request.tenant.displayNameEncrypted)
+        : null,
+      notificationPreferences: request.membershipId
+        ? prefsByMembership.get(request.membershipId) ?? null
+        : null,
+      termsAcceptance: termsByRequest.get(request.id) ?? null,
+    }),
+  );
 }

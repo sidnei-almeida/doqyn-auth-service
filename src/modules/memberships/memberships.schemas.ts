@@ -47,6 +47,31 @@ export interface MemberDetailResponse {
     displayName: string | null;
     status: string;
   };
+  requestedAccess?: {
+    personType: string;
+    taxIdType: string;
+    taxIdMasked: string | null;
+    tenantDisplayName: string | null;
+    jobTitle: string | null;
+    departmentText: string | null;
+    reason: string | null;
+    requestedAt: string;
+    source: 'access_request';
+  };
+  consent?: {
+    textVersion: string | null;
+    acceptedAt: string;
+    operationalNotificationsConsent: boolean;
+  };
+  notificationPreferences?: {
+    email: boolean;
+    whatsapp: boolean;
+    documentCreated: boolean;
+    documentUpdated: boolean;
+    documentRequiresSignature: boolean;
+    accessApproved: boolean;
+    accessRejected: boolean;
+  };
   createdAt: string;
   updatedAt: string;
   lastLoginAt: string | null;

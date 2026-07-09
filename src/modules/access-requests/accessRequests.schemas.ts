@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { termsAcceptanceFields } from '../terms/termsAcceptance.schemas.js';
 
 export const accessRequestSchema = z.object({
   personType: z.enum(['individual', 'business']).default('business'),
@@ -13,6 +14,7 @@ export const accessRequestSchema = z.object({
   departmentText: z.string().min(1),
   reason: z.string().min(1),
   operationalNotificationsConsent: z.boolean().default(false),
+  ...termsAcceptanceFields,
 });
 
 export type AccessRequestInput = z.infer<typeof accessRequestSchema>;

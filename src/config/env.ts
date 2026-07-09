@@ -24,6 +24,34 @@ const envSchema = z.object({
   PASSWORD_PEPPER: z.string().optional().default(''),
   PASSWORD_RESET_TTL_MINUTES: z.coerce.number().default(30),
   EMAIL_VERIFICATION_TTL_HOURS: z.coerce.number().default(24),
+  OAUTH_GOOGLE_ENABLED: z
+    .string()
+    .optional()
+    .default('false')
+    .transform((v) => v === 'true'),
+  OAUTH_GOOGLE_CLIENT_ID: z.string().optional().default(''),
+  OAUTH_GOOGLE_CLIENT_SECRET: z.string().optional().default(''),
+  OAUTH_GOOGLE_REDIRECT_URI: z
+    .string()
+    .optional()
+    .default('http://127.0.0.1:4100/oauth/google/callback'),
+  OAUTH_MICROSOFT_ENABLED: z
+    .string()
+    .optional()
+    .default('false')
+    .transform((v) => v === 'true'),
+  OAUTH_MICROSOFT_CLIENT_ID: z.string().optional().default(''),
+  OAUTH_MICROSOFT_CLIENT_SECRET: z.string().optional().default(''),
+  OAUTH_MICROSOFT_TENANT: z.string().optional().default('common'),
+  OAUTH_MICROSOFT_REDIRECT_URI: z
+    .string()
+    .optional()
+    .default('http://127.0.0.1:4100/oauth/microsoft/callback'),
+  OAUTH_POST_LOGIN_REDIRECT_URL: z
+    .string()
+    .optional()
+    .default('http://localhost:5173/auth/oauth/callback'),
+  OAUTH_ERROR_REDIRECT_URL: z.string().optional().default('http://localhost:5173/login'),
 });
 
 export type Env = z.infer<typeof envSchema>;

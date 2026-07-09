@@ -6,6 +6,7 @@ import { TEST_ENV } from './setup.js';
 import { hashLookup } from '../src/security/crypto.js';
 import { normalizeTaxId } from '../src/utils/normalize.js';
 import { extractCookie } from './helpers.js';
+import { DOQYN_TERMS_VERSION } from '../src/modules/terms/terms.constants.js';
 
 const mockFetch = vi.fn();
 
@@ -47,7 +48,8 @@ describe('individual signups', () => {
     taxId: '52998224725',
     password: 'senha-dev-123',
     confirmPassword: 'senha-dev-123',
-    termsAccepted: true as const,
+    acceptedTerms: true as const,
+    acceptedTermsVersion: DOQYN_TERMS_VERSION,
   };
 
   it('POST /auth/individual-signups cria tenant individual, membership e sessão', async () => {

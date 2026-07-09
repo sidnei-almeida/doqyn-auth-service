@@ -9,6 +9,8 @@ export type AuditAction =
   | 'user.deactivated'
   | 'user.anonymized'
   | 'user.sessions_revoked'
+  | 'user.avatar_updated'
+  | 'user.avatar_removed'
   | 'login.success'
   | 'login.failed'
   | 'logout'
@@ -50,7 +52,15 @@ export type AuditAction =
   | 'tenant.unblocked'
   | 'tenant.admin_transferred'
   | 'tenant.selected'
-  | 'account.deletion_requested';
+  | 'account.deletion_requested'
+  | 'auth.oauth_started'
+  | 'auth.oauth_completed'
+  | 'auth.oauth_failed'
+  | 'auth.oauth_account_linked'
+  | 'auth.oauth_user_created'
+  | 'auth.oauth_login_success'
+  | 'auth.oauth_login_blocked'
+  | 'auth.oauth_onboarding_required';
 
 export interface AuditContext {
   userId?: string;

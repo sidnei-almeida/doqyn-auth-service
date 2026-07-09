@@ -55,6 +55,13 @@ enum AccessRequestStatus {
   cancelled
 }
 
+enum TermsAcceptanceFlow {
+  company_registration
+  access_request
+  individual_registration
+  reacceptance
+}
+
 model AuthUser {
   id                 String         @id @default(uuid()) @db.Uuid
   emailEncrypted     String         @map("email_encrypted")
@@ -67,6 +74,13 @@ model AuthUser {
   emailVerified      Boolean        @default(false) @map("email_verified")
   lastLoginAt        DateTime?      @map("last_login_at")
   anonymizedAt       DateTime?      @map("anonymized_at")
+  avatarStorageProvider String?     @map("avatar_storage_provider")
+  avatarObjectKey       String?     @map("avatar_object_key")
+  avatarContentType     String?     @map("avatar_content_type")
+  avatarVersion         Int         @default(0) @map("avatar_version")
+  avatarUpdatedAt       DateTime?   @map("avatar_updated_at")
+  avatarSize            Int?        @map("avatar_size")
+  avatarStatus          String?     @map("avatar_status")
   createdAt          DateTime       @default(now()) @map("created_at")
   updatedAt          DateTime       @updatedAt @map("updated_at")
 
@@ -78,6 +92,8 @@ model AuthUser {
   memberships        AuthMembership[]
   accessRequests     AuthAccessRequest[]
   deletionRequests   AuthAccountDeletionRequest[]
+  termsAcceptances   AuthTermsAcceptance[]
+  oauthAccounts      AuthOAuthAccount[]
 
   @@index([whatsappLookupHash])
   @@index([status])
@@ -201,6 +217,7 @@ model AuthTenant {
   memberships    AuthMembership[]
   accessGroups   AuthAccessGroup[]
   accessRequests AuthAccessRequest[]
+  termsAcceptances AuthTermsAcceptance[]
 
   @@index([taxIdHash])
   @@index([status])
@@ -219,6 +236,7 @@ model AuthMembership {
   approvedAt                   DateTime?        @map("approved_at")
   rejectedByMembershipId       String?          @map("rejected_by_membership_id") @db.Uuid
   rejectedAt                   DateTime?        @map("rejected_at")
+  rejectedReasonEncrypted      String?          @map("rejected_reason_encrypted")
   blockedByMembershipId        String?          @map("blocked_by_membership_id") @db.Uuid
   blockedAt                    DateTime?        @map("blocked_at")
   removedByMembershipId        String?          @map("removed_by_membership_id") @db.Uuid
@@ -233,6 +251,7 @@ model AuthMembership {
   notificationPreference AuthNotificationPreference?
   accessRequests         AuthAccessRequest[]
   activeSessions         AuthSession[]
+  termsAcceptances       AuthTermsAcceptance[]
 
   @@unique([userId, tenantId])
   @@index([tenantId, status])
@@ -311,6 +330,7 @@ model AuthAccessRequest {
   user       AuthUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
   tenant     AuthTenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   membership AuthMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  termsAcceptances AuthTermsAcceptance[]
 
   @@map("auth_access_requests")
 }
@@ -346,4 +366,55 @@ model AuthAccountDeletionRequest {
   @@index([userId])
   @@index([status])
   @@map("auth_account_deletion_requests")
+}
+
+model AuthTermsAcceptance {
+  id              String              @id @default(uuid()) @db.Uuid
+  userId          String?             @map("user_id") @db.Uuid
+  membershipId    String?             @map("membership_id") @db.Uuid
+  tenantId        String?             @map("tenant_id") @db.Uuid
+  accessRequestId String?             @map("access_request_id") @db.Uuid
+  flow            TermsAcceptanceFlow
+  termsVersion    String              @map("terms_version")
+  privacyVersion  String?             @map("privacy_version")
+  acceptedAt      DateTime            @default(now()) @map("accepted_at")
+  ipAddressHash   String?             @map("ip_address_hash")
+  userAgentHash   String?             @map("user_agent_hash")
+  createdAt       DateTime            @default(now()) @map("created_at")
+
+  user          AuthUser?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  membership    AuthMembership?    @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  tenant        AuthTenant?        @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  accessRequest AuthAccessRequest? @relation(fields: [accessRequestId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([membershipId])
+  @@index([tenantId])
+  @@index([accessRequestId])
+  @@index([flow])
+  @@map("auth_terms_acceptances")
+}
+
+model AuthOAuthAccount {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  provider         String
+  providerSubject  String    @map("provider_subject")
+  providerTenantId String?   @map("provider_tenant_id")
+  email            String?
+  emailVerified    Boolean   @default(false) @map("email_verified")
+  displayName      String?   @map("display_name")
+  avatarUrl        String?   @map("avatar_url")
+  linkedAt         DateTime  @default(now()) @map("linked_at")
+  lastLoginAt      DateTime? @map("last_login_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubject])
+  @@index([userId])
+  @@index([email])
+  @@index([provider, email])
+  @@map("auth_oauth_accounts")
 }

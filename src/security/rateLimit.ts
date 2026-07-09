@@ -57,6 +57,10 @@ export function checkPasswordResetRateLimit(ipHash: string): void {
   checkLimit(`reset:ip:${ipHash}`, 5);
 }
 
+export function checkOAuthRateLimit(ipHash: string): void {
+  checkLimit(`oauth:ip:${ipHash}`, 20);
+}
+
 export function resetRateLimitStore(): void {
   store.clear();
 }

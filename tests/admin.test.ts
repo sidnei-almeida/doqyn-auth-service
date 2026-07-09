@@ -112,6 +112,43 @@ describe('admin', () => {
     expect(response.statusCode).toBe(200);
   });
 
+  it('company_admin rejeita usuário pendente com motivo persistido', async () => {
+    const { membership: adminMembership, tenant } = await setupAdminUser(
+      'admin.reject@empresa.com',
+      'senha-segura-123',
+      'tenant_reject',
+    );
+
+    const user = await createTestUser('rejeitado@empresa.com', 'senha-segura-123');
+    const target = await createTestMembership(user.id, tenant.id, 'pending');
+    await prismaAccessRequest(target.id, user.id, tenant.id);
+
+    const { token } = await loginUser(app, 'admin.reject@empresa.com', 'senha-segura-123', cookieName);
+
+    await app.inject({
+      method: 'POST',
+      url: '/auth/select-tenant',
+      headers: { cookie: `${cookieName}=${token}` },
+      payload: { membershipId: adminMembership.id },
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/auth/admin/members/${target.id}/reject`,
+      headers: { cookie: `${cookieName}=${token}` },
+      payload: { reason: 'Perfil não autorizado para este tenant.' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect((response.json() as { membership: { status: string } }).membership.status).toBe('rejected');
+
+    const { prisma } = await import('../src/db/prisma.js');
+    const { decryptField } = await import('../src/security/crypto.js');
+    const stored = await prisma.authMembership.findUnique({ where: { id: target.id } });
+    expect(stored?.rejectedReasonEncrypted).toBeTruthy();
+    expect(decryptField(stored!.rejectedReasonEncrypted!)).toBe('Perfil não autorizado para este tenant.');
+  });
+
   it('user recebe 403 em admin endpoints', async () => {
     const user = await createTestUser('plain@empresa.com', 'senha-segura-123');
     const tenant = await createTestTenant('tenant_f');

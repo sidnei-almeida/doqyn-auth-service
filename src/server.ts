@@ -1,9 +1,26 @@
 import { buildApp } from './app.js';
 import { loadEnv } from './config/env.js';
-import { disconnectPrisma } from './db/prisma.js';
+import {
+  buildStartupDatabaseFailureMessage,
+  checkDatabaseConnection,
+} from './db/databaseHealth.js';
+import { disconnectPrisma, prisma } from './db/prisma.js';
 
 async function main() {
   const env = loadEnv();
+
+  if (!env.DATABASE_URL?.trim()) {
+    console.error('DATABASE_URL não configurada.');
+    process.exit(1);
+  }
+
+  const dbCheck = await checkDatabaseConnection(prisma);
+  if (!dbCheck.ok) {
+    console.error(buildStartupDatabaseFailureMessage(env.DATABASE_URL));
+    await disconnectPrisma();
+    process.exit(1);
+  }
+
   const app = await buildApp();
 
   const shutdown = async () => {

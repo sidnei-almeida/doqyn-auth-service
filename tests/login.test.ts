@@ -5,6 +5,7 @@ import { prisma } from '../src/db/prisma.js';
 import { getSessionCookieName } from '../src/security/cookies.js';
 import { createOrGetUser } from '../src/modules/users/users.service.js';
 import { disableUser } from '../src/modules/users/users.service.js';
+import { createTestMembership, createTestTenant } from './helpers.js';
 import { TEST_ENV } from './setup.js';
 
 describe('login', () => {
@@ -21,10 +22,12 @@ describe('login', () => {
   });
 
   it('login com senha correta cria sessão', async () => {
-    await createOrGetUser({
+    const user = await createOrGetUser({
       email: 'login@empresa.com',
       temporaryPassword: 'senha-segura-123',
     });
+    const tenant = await createTestTenant('tenant_login_ok');
+    await createTestMembership(user.id, tenant.id, 'active');
 
     const response = await app.inject({
       method: 'POST',
@@ -65,7 +68,9 @@ describe('login', () => {
     });
 
     expect(response.statusCode).toBe(401);
-    expect(response.json().message).toBe('E-mail ou senha inválidos.');
+    const body = response.json();
+    expect(body.message).toBe('E-mail ou senha inválidos.');
+    expect(body.code).toBe('INVALID_CREDENTIALS');
   });
 
   it('usuário disabled não loga', async () => {
@@ -84,7 +89,10 @@ describe('login', () => {
       },
     });
 
-    expect(response.statusCode).toBe(401);
+    expect(response.statusCode).toBe(403);
+    const body = response.json();
+    expect(body.code).toBe('USER_DISABLED');
+    expect(body.message).toMatch(/desativada/i);
   });
 
   it('resposta não expõe hash/encrypted', async () => {

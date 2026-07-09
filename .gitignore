@@ -19,3 +19,6 @@ docs/
 
 # Artefatos locais de teste manual (curl -c cookies.txt)
 cookies.txt
+
+# Demo seed (manifest e relatório local)
+.generated/

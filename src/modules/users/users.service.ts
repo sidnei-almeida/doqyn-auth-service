@@ -19,6 +19,12 @@ export function toPublicUser(user: AuthUser): PublicUser {
     status: user.status,
     emailVerified: user.emailVerified,
     ...(user.lastLoginAt ? { lastLoginAt: user.lastLoginAt.toISOString() } : {}),
+    avatarVersion: user.avatarVersion ?? 0,
+    ...(user.avatarUpdatedAt ? { avatarUpdatedAt: user.avatarUpdatedAt.toISOString() } : {}),
+    avatarStatus:
+      user.avatarStatus === 'active' || user.avatarStatus === 'removed'
+        ? user.avatarStatus
+        : null,
   };
 }
 
@@ -117,4 +123,62 @@ export async function getUserCredential(userId: string) {
 
 export function isUserLoginAllowed(status: AuthUserStatus): boolean {
   return status === 'active' || status === 'pending_verification';
+}
+
+export type UpdateUserAvatarMetadataInput = {
+  storageProvider?: 'r2' | 'local' | null;
+  objectKey?: string | null;
+  contentType?: string | null;
+  version: number;
+  size?: number | null;
+  status: 'active' | 'removed';
+};
+
+export async function updateUserAvatarMetadata(
+  userId: string,
+  input: UpdateUserAvatarMetadataInput,
+): Promise<PublicUser> {
+  const user = await prisma.authUser.update({
+    where: { id: userId },
+    data: {
+      avatarStorageProvider: input.storageProvider ?? null,
+      avatarObjectKey: input.objectKey ?? null,
+      avatarContentType: input.contentType ?? null,
+      avatarVersion: input.version,
+      avatarUpdatedAt: new Date(),
+      avatarSize: input.size ?? null,
+      avatarStatus: input.status,
+    },
+  });
+
+  return toPublicUser(user);
+}
+
+export async function getUserAvatarMetadata(userId: string): Promise<{
+  storageProvider: string | null;
+  objectKey: string | null;
+  contentType: string | null;
+  version: number;
+  status: string | null;
+} | null> {
+  const user = await prisma.authUser.findUnique({
+    where: { id: userId },
+    select: {
+      avatarStorageProvider: true,
+      avatarObjectKey: true,
+      avatarContentType: true,
+      avatarVersion: true,
+      avatarStatus: true,
+    },
+  });
+
+  if (!user) return null;
+
+  return {
+    storageProvider: user.avatarStorageProvider,
+    objectKey: user.avatarObjectKey,
+    contentType: user.avatarContentType,
+    version: user.avatarVersion ?? 0,
+    status: user.avatarStatus,
+  };
 }

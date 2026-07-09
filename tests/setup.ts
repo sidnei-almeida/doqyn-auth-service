@@ -29,11 +29,25 @@ export const TEST_ENV = {
   PASSWORD_PEPPER: 'test-pepper',
   PASSWORD_RESET_TTL_MINUTES: '30',
   EMAIL_VERIFICATION_TTL_HOURS: '24',
+  OAUTH_GOOGLE_ENABLED: 'true',
+  OAUTH_GOOGLE_CLIENT_ID: 'test-google-client',
+  OAUTH_GOOGLE_CLIENT_SECRET: 'test-google-secret',
+  OAUTH_GOOGLE_REDIRECT_URI: 'http://127.0.0.1:4100/oauth/google/callback',
+  OAUTH_MICROSOFT_ENABLED: 'true',
+  OAUTH_MICROSOFT_CLIENT_ID: 'test-microsoft-client',
+  OAUTH_MICROSOFT_CLIENT_SECRET: 'test-microsoft-secret',
+  OAUTH_MICROSOFT_TENANT: 'common',
+  OAUTH_MICROSOFT_REDIRECT_URI: 'http://127.0.0.1:4100/oauth/microsoft/callback',
+  OAUTH_POST_LOGIN_REDIRECT_URL: 'http://localhost:5173/auth/oauth/callback',
+  OAUTH_ERROR_REDIRECT_URL: 'http://localhost:5173/login',
 };
 
-beforeAll(() => {
+beforeAll(async () => {
   Object.assign(process.env, TEST_ENV);
   resetEnvCache();
+  await prisma.$executeRawUnsafe(
+    'ALTER TABLE "auth_memberships" ADD COLUMN IF NOT EXISTS "rejected_reason_encrypted" TEXT',
+  );
 });
 
 beforeEach(async () => {
@@ -51,6 +65,7 @@ beforeEach(async () => {
   await prisma.authAccessGroup.deleteMany();
   await prisma.authTenant.deleteMany();
   await prisma.authCredential.deleteMany();
+  await prisma.authOAuthAccount.deleteMany();
   await prisma.authAccountDeletionRequest.deleteMany();
   await prisma.authUser.deleteMany();
 });

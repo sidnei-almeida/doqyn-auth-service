@@ -289,8 +289,8 @@ export async function removeMember(
     }),
   );
 
-  const updated = await findMembershipById(targetMembershipId);
-  scheduleTenantMemberSync(targetMembershipId);
+  const updated = await findMembershipById(membershipId);
+  scheduleTenantMemberSync(membershipId);
   return toPublicMembership(updated!);
 }
 

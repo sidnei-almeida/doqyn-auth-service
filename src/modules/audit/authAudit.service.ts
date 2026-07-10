@@ -60,7 +60,12 @@ export type AuditAction =
   | 'auth.oauth_user_created'
   | 'auth.oauth_login_success'
   | 'auth.oauth_login_blocked'
-  | 'auth.oauth_onboarding_required';
+  | 'auth.oauth_onboarding_required'
+  | 'email_change.requested'
+  | 'email_change.confirmed'
+  | 'invite.created'
+  | 'invite.accepted'
+  | 'invite.revoked';
 
 export interface AuditContext {
   userId?: string;

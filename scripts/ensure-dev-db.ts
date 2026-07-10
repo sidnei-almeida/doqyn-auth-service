@@ -38,6 +38,13 @@ async function main(): Promise<void> {
     }
     process.exit(1);
   }
+
+  if (result.migrationHint) {
+    console.warn(result.migrationHint);
+  }
+
+  execInherit('npx prisma migrate deploy');
+  execInherit('npx prisma generate');
 }
 
 main().catch((error) => {

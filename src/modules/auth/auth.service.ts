@@ -135,7 +135,7 @@ export async function login(
     };
   }
 
-  const passwordValid = await verifyPassword(input.password, credential.passwordHash);
+  const passwordValid = await verifyPassword(input.password.trim(), credential.passwordHash);
   if (!passwordValid) {
     await recordLoginAttempt(emailLookupHash, ctx.ipHash, false, 'invalid_password');
     await logAuthAudit('login.failed', {

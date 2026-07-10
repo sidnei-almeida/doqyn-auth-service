@@ -49,6 +49,17 @@ import {
   updateTenantAdminSchema,
 } from './admin.schemas.js';
 import { type AuthenticatedRequest, requireAdminActor } from './adminAuth.js';
+import {
+  getTenantOutboundEmailView,
+  resolveTenantOutboundEmailForTest,
+  upsertTenantOutboundEmail,
+} from '../tenant-email/tenantOutboundEmail.service.js';
+import {
+  testTenantOutboundEmailSchema,
+  upsertTenantOutboundEmailSchema,
+} from '../tenant-email/tenantOutboundEmail.schemas.js';
+import { sendTenantEmailTest } from '../invites/inviteEmail.js';
+import { findUserById, toPublicUser } from '../users/users.service.js';
 
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', requireAdminActor);
@@ -312,5 +323,42 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       ctx,
     );
     return reply.send({ ok: true, ...result });
+  });
+
+  app.get('/auth/admin/tenant/outbound-email', async (request, reply) => {
+    const actor = (request as AuthenticatedRequest).adminActor!;
+    const config = await getTenantOutboundEmailView(actor);
+    return reply.send({ ok: true, outboundEmail: config });
+  });
+
+  app.put('/auth/admin/tenant/outbound-email', async (request, reply) => {
+    const body = upsertTenantOutboundEmailSchema.parse(request.body ?? {});
+    const actor = (request as AuthenticatedRequest).adminActor!;
+    const outboundEmail = await upsertTenantOutboundEmail(actor, body);
+    return reply.send({ ok: true, outboundEmail });
+  });
+
+  app.post('/auth/admin/tenant/outbound-email/test', async (request, reply) => {
+    const body = testTenantOutboundEmailSchema.parse(request.body ?? {});
+    const actor = (request as AuthenticatedRequest).adminActor!;
+    const inviter = await findUserById(actor.userId);
+    if (!inviter) {
+      return reply.status(401).send({ ok: false, message: 'Usuário não encontrado.' });
+    }
+    const inviterPublic = toPublicUser(inviter);
+    const inviterName =
+      [inviterPublic.firstName, inviterPublic.lastName].filter(Boolean).join(' ').trim() ||
+      inviterPublic.email;
+    const resolved = await resolveTenantOutboundEmailForTest(actor, body);
+    await sendTenantEmailTest({
+      to: inviterPublic.email,
+      inviterName,
+      inviterEmail: inviterPublic.email,
+      tenantDisplayName: actor.membership.tenantDisplayName ?? actor.membership.tenantId,
+      smtpTransport: resolved.transport,
+      fromDomain: resolved.fromDomain,
+      tenantUuid: resolved.tenantUuid,
+    });
+    return reply.send({ ok: true, message: 'E-mail de teste enviado para o seu endereço.' });
   });
 }

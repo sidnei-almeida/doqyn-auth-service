@@ -64,15 +64,18 @@ async function detectMigrationHint(databaseUrl: string): Promise<string | undefi
       SELECT table_name
       FROM information_schema.tables
       WHERE table_schema = 'public'
-        AND table_name IN ('auth_users', '_prisma_migrations')
+        AND table_name IN ('auth_users', 'auth_invites', '_prisma_migrations')
     `;
     const tableNames = new Set(tables.map((row) => row.table_name));
     if (!tableNames.has('_prisma_migrations') || !tableNames.has('auth_users')) {
-      return 'Migrations pendentes. Rode: npx prisma migrate deploy';
+      return 'Schema auth incompleto. Aplicando migrations com prisma migrate deploy...';
+    }
+    if (!tableNames.has('auth_invites')) {
+      return 'Migrations de convites pendentes. Aplicando com prisma migrate deploy...';
     }
     return undefined;
   } catch {
-    return undefined;
+    return 'Não foi possível verificar migrations. Tentando prisma migrate deploy...';
   } finally {
     await prisma.$disconnect();
   }

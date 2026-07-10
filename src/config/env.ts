@@ -52,6 +52,29 @@ const envSchema = z.object({
     .optional()
     .default('http://localhost:5173/auth/oauth/callback'),
   OAUTH_ERROR_REDIRECT_URL: z.string().optional().default('http://localhost:5173/login'),
+  DOQYN_APP_PUBLIC_URL: z.string().optional().default(''),
+  EMAIL_FROM: z.string().optional().default('noreply@doqyn.com.br'),
+  EMAIL_ENABLED: z
+    .string()
+    .optional()
+    .default('false')
+    .transform((v) => v === 'true'),
+  INVITE_TTL_DAYS: z.coerce.number().default(7),
+  EMAIL_CHANGE_TTL_HOURS: z.coerce.number().default(24),
+  EMAIL_CHANGE_ENABLED: z
+    .string()
+    .optional()
+    .default('false')
+    .transform((v) => v === 'true'),
+  SMTP_HOST: z.string().optional().default(''),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_SECURE: z
+    .string()
+    .optional()
+    .default('false')
+    .transform((v) => v === 'true'),
+  SMTP_USER: z.string().optional().default(''),
+  SMTP_PASSWORD: z.string().optional().default(''),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -87,4 +110,11 @@ export function getAllowedOrigins(env: Env): string[] {
 
 export function isProduction(env: Env): boolean {
   return env.NODE_ENV === 'production';
+}
+
+export function getPublicAppBaseUrl(env: Env): string {
+  const explicit = env.DOQYN_APP_PUBLIC_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, '');
+  const origins = getAllowedOrigins(env);
+  return (origins[0] ?? 'http://localhost:5173').replace(/\/$/, '');
 }

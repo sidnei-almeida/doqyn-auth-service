@@ -67,6 +67,14 @@ export function hashPasswordResetToken(token: string): string {
   return hmacSha256(token, getPasswordResetTokenSecret());
 }
 
+export function hashInviteToken(token: string): string {
+  return hmacSha256(token, getPasswordResetTokenSecret());
+}
+
+export function hashEmailChangeToken(token: string): string {
+  return hmacSha256(token, getPasswordResetTokenSecret());
+}
+
 export function hashIp(ip: string): string {
   return hmacSha256(ip, getLookupSecret());
 }

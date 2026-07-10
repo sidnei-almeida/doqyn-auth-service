@@ -1,4 +1,4 @@
-import type { AuthAccessRequest, AuthNotificationPreference, AuthTermsAcceptance, AuthUser } from '@prisma/client';
+import type { AuthAccessRequest, AuthMembership, AuthNotificationPreference, AuthTenant, AuthTermsAcceptance, AuthUser } from '@prisma/client';
 import { decryptField } from '../../security/crypto.js';
 import { toPublicUser } from '../users/users.service.js';
 
@@ -80,6 +80,35 @@ export function buildRequestedAccessFromRecord(
     reason: decryptOptional(request.reasonEncrypted),
     requestedAt: request.requestedAt.toISOString(),
     source: 'access_request' as const,
+  };
+}
+
+export function buildRequestedAccessFromMembership(
+  membership: Pick<
+    AuthMembership,
+    | 'requestedJobTitleEncrypted'
+    | 'requestedDepartmentEncrypted'
+    | 'requestedReasonEncrypted'
+    | 'createdAt'
+  >,
+  tenant: Pick<AuthTenant, 'taxIdType' | 'taxIdMasked' | 'displayNameEncrypted' | 'tenantId'>,
+) {
+  if (!membership.requestedJobTitleEncrypted && !membership.requestedDepartmentEncrypted) {
+    return undefined;
+  }
+
+  return {
+    personType: 'business',
+    taxIdType: tenant.taxIdType ?? 'CNPJ',
+    taxIdMasked: tenant.taxIdMasked,
+    tenantDisplayName: tenant.displayNameEncrypted
+      ? decryptField(tenant.displayNameEncrypted)
+      : tenant.tenantId,
+    jobTitle: decryptOptional(membership.requestedJobTitleEncrypted),
+    departmentText: decryptOptional(membership.requestedDepartmentEncrypted),
+    reason: decryptOptional(membership.requestedReasonEncrypted),
+    requestedAt: membership.createdAt.toISOString(),
+    source: 'invite' as const,
   };
 }
 

@@ -143,7 +143,7 @@ async function seed() {
     process.exit(1);
   }
 
-  const devPassword = process.env.SEED_DEV_PASSWORD || 'dev-password-change-me';
+  const devPassword = process.env.SEED_DEV_PASSWORD || 'DevDoqyn@123';
   const passwordHash = await hashPassword(devPassword);
 
   const tenant = await ensureDevTenant();

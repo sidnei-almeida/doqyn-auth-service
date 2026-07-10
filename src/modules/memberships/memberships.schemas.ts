@@ -56,7 +56,7 @@ export interface MemberDetailResponse {
     departmentText: string | null;
     reason: string | null;
     requestedAt: string;
-    source: 'access_request';
+    source: 'access_request' | 'invite';
   };
   consent?: {
     textVersion: string | null;

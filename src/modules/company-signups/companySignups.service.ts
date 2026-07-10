@@ -91,6 +91,7 @@ export async function submitCompanySignup(
         whatsappEncrypted: encryptField(whatsapp),
         whatsappLookupHash: hashLookup(whatsapp),
         status: 'active',
+        emailVerified: true,
       },
     });
 

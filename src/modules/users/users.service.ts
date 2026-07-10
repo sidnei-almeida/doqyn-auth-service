@@ -121,6 +121,22 @@ export async function getUserCredential(userId: string) {
   return prisma.authCredential.findUnique({ where: { userId } });
 }
 
+export async function updateUserEmail(userId: string, email: string): Promise<PublicUser> {
+  const normalized = normalizeEmail(email);
+  const emailLookupHash = hashLookup(normalized);
+
+  const user = await prisma.authUser.update({
+    where: { id: userId },
+    data: {
+      emailEncrypted: encryptField(normalized),
+      emailLookupHash,
+      emailVerified: true,
+    },
+  });
+
+  return toPublicUser(user);
+}
+
 export function isUserLoginAllowed(status: AuthUserStatus): boolean {
   return status === 'active' || status === 'pending_verification';
 }

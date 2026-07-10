@@ -61,6 +61,23 @@ export function checkOAuthRateLimit(ipHash: string): void {
   checkLimit(`oauth:ip:${ipHash}`, 20);
 }
 
+export function checkInviteCreateRateLimit(ipHash: string): void {
+  checkLimit(`invite-create:ip:${ipHash}`, 30);
+}
+
+export function checkInviteAcceptRateLimit(ipHash: string): void {
+  checkLimit(`invite-accept:ip:${ipHash}`, 15);
+}
+
+export function checkEmailChangeRequestRateLimit(ipHash: string, userId: string): void {
+  checkLimit(`email-change-request:ip:${ipHash}`, 10);
+  checkLimit(`email-change-request:user:${userId}`, 5);
+}
+
+export function checkEmailChangeConfirmRateLimit(ipHash: string): void {
+  checkLimit(`email-change-confirm:ip:${ipHash}`, 15);
+}
+
 export function resetRateLimitStore(): void {
   store.clear();
 }

@@ -183,5 +183,6 @@ describe('ensure-dev-db script', () => {
     expect(script).not.toContain('down -v');
     expect(script).not.toContain('db:seed');
     expect(script).not.toContain('deleteMany');
+    expect(script).toContain('prisma migrate deploy');
   });
 });

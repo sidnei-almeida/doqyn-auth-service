@@ -30,6 +30,17 @@ import {
 } from './auth.service.js';
 import { loginSchema } from './auth.schemas.js';
 import { changePasswordSchema } from '../change-password/changePassword.schemas.js';
+import {
+  emailChangeTokenParamSchema,
+  requestEmailChangeSchema,
+} from '../email-change/emailChange.schemas.js';
+import {
+  confirmEmailChange,
+  getEmailChangeStatus,
+  previewEmailChange,
+  requestEmailChange,
+} from '../email-change/emailChange.service.js';
+import { assertEmailChangeEnabled } from '../email-change/emailChange.guard.js';
 import { validateSessionByToken } from '../sessions/sessions.service.js';
 import { selectTenantSchema } from '../admin/admin.schemas.js';
 import { accessRequestSchema } from '../access-requests/accessRequests.schemas.js';
@@ -279,6 +290,51 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       message: result.message,
       revokedOtherSessions: result.revokedOtherSessions,
     });
+  });
+
+  app.get('/auth/account/email-change', async (request, reply) => {
+    assertEmailChangeEnabled();
+    const token = getSessionTokenFromRequest(request);
+    if (!token) {
+      return reply.status(401).send({ ok: false, message: 'Não autenticado.', code: 'UNAUTHORIZED' });
+    }
+    const sessionResult = await validateSessionByToken(token);
+    if (!sessionResult.valid) {
+      return reply.status(401).send({ ok: false, message: 'Sessão inválida.', code: 'INVALID_SESSION' });
+    }
+    const status = await getEmailChangeStatus(sessionResult.user.id);
+    return reply.send({ ok: true, ...status });
+  });
+
+  app.post('/auth/account/email-change/request', async (request, reply) => {
+    assertEmailChangeEnabled();
+    const token = getSessionTokenFromRequest(request);
+    if (!token) {
+      return reply.status(401).send({ ok: false, message: 'Não autenticado.', code: 'UNAUTHORIZED' });
+    }
+    const sessionResult = await validateSessionByToken(token);
+    if (!sessionResult.valid) {
+      return reply.status(401).send({ ok: false, message: 'Sessão inválida.', code: 'INVALID_SESSION' });
+    }
+    const body = requestEmailChangeSchema.parse(request.body ?? {});
+    const ctx = extractRequestContext(request);
+    const result = await requestEmailChange(sessionResult.user.id, body, token, ctx.ipHash);
+    return reply.send(result);
+  });
+
+  app.get('/auth/account/email-change/:token', async (request, reply) => {
+    assertEmailChangeEnabled();
+    const params = emailChangeTokenParamSchema.parse(request.params);
+    const result = await previewEmailChange(params.token);
+    return reply.send(result);
+  });
+
+  app.post('/auth/account/email-change/:token/confirm', async (request, reply) => {
+    assertEmailChangeEnabled();
+    const params = emailChangeTokenParamSchema.parse(request.params);
+    const ctx = extractRequestContext(request);
+    const result = await confirmEmailChange(params.token, ctx.ipHash);
+    return reply.send(result);
   });
 }
 

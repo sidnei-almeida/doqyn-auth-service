@@ -17,6 +17,7 @@
     "prisma:studio": "prisma studio",
     "db:seed": "tsx src/db/seed.ts",
     "dev:seed:demo": "tsx src/demo/demoSeed.ts",
+    "dev:seed:all": "SEED_FORCE_PASSWORD_RESET=true tsx src/db/seed.ts && tsx src/demo/demoSeed.ts",
     "db:seed:docker": "node dist/db/seed.js",
     "dev:reset:postgres": "tsx scripts/dev-reset-postgres.ts",
     "audit:db-counts": "tsx scripts/audit-db-counts.ts",
@@ -41,10 +42,12 @@
     "argon2": "^0.41.1",
     "fastify": "^5.2.1",
     "jose": "^6.2.3",
+    "nodemailer": "^9.0.3",
     "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
+    "@types/nodemailer": "^8.0.1",
     "@typescript-eslint/eslint-plugin": "^8.26.1",
     "@typescript-eslint/parser": "^8.26.1",
     "eslint": "^9.22.0",

@@ -15,11 +15,16 @@ info()  { echo -e "${GREEN}→${NC} $*"; }
 warn()  { echo -e "${YELLOW}!${NC} $*"; }
 error() { echo -e "${RED}✗${NC} $*" >&2; }
 
+COMPOSE_FILE="$PROJECT_ROOT/docker-compose.production.yml"
+if [[ ! -f "$COMPOSE_FILE" ]]; then
+  COMPOSE_FILE="$PROJECT_ROOT/docker-compose.yml"
+fi
+
 compose() {
   if docker compose version >/dev/null 2>&1; then
-    docker compose "$@"
+    docker compose -f "$COMPOSE_FILE" "$@"
   elif command -v docker-compose >/dev/null 2>&1; then
-    docker-compose "$@"
+    docker-compose -f "$COMPOSE_FILE" "$@"
   else
     error "docker compose não encontrado."
     exit 1
@@ -49,17 +54,11 @@ PORT="${PORT:-4100}"
 info "Subindo PostgreSQL..."
 compose up -d postgres-auth
 
-info "Aguardando PostgreSQL ficar saudável..."
-sleep 3
-
 info "Aplicando migrations..."
 compose run --rm auth-migrate
 
 info "Subindo auth-api..."
-compose up -d auth-api
-
-info "Aguardando API ficar disponível..."
-sleep 3
+compose up -d --wait auth-api
 
 info "Verificando health check..."
 if curl -sf "http://localhost:${PORT}/health" >/dev/null; then

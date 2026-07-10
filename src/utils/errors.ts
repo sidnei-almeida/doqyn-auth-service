@@ -80,3 +80,9 @@ export class ConflictError extends AppError {
     super(message, 409, code);
   }
 }
+
+export class GoneError extends AppError {
+  constructor(message: string, code = 'GONE') {
+    super(message, 410, code);
+  }
+}

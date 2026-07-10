@@ -48,6 +48,9 @@ beforeAll(async () => {
   await prisma.$executeRawUnsafe(
     'ALTER TABLE "auth_memberships" ADD COLUMN IF NOT EXISTS "rejected_reason_encrypted" TEXT',
   );
+  await prisma.$executeRawUnsafe(
+    'ALTER TYPE "TermsAcceptanceFlow" ADD VALUE IF NOT EXISTS \'invite_accept\'',
+  );
 });
 
 beforeEach(async () => {
@@ -55,12 +58,17 @@ beforeEach(async () => {
   await prisma.authAuditLog.deleteMany();
   await prisma.authLoginAttempt.deleteMany();
   await prisma.authEmailVerification.deleteMany();
+  await prisma.authEmailChange.deleteMany();
   await prisma.authPasswordReset.deleteMany();
   await prisma.authSession.deleteMany();
   await prisma.authNotificationPreference.deleteMany();
   await prisma.authMembershipAccessGroup.deleteMany();
   await prisma.authMembershipRole.deleteMany();
   await prisma.authAccessRequest.deleteMany();
+  await prisma.authTermsAcceptance.deleteMany();
+  await prisma.authInviteRole.deleteMany();
+  await prisma.authInvite.deleteMany();
+  await prisma.authTenantOutboundEmail.deleteMany();
   await prisma.authMembership.deleteMany();
   await prisma.authAccessGroup.deleteMany();
   await prisma.authTenant.deleteMany();

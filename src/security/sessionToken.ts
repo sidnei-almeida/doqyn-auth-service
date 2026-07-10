@@ -13,3 +13,11 @@ export function generatePasswordResetToken(): string {
 export function generateEmailVerificationToken(): string {
   return randomBytes(TOKEN_BYTES).toString('base64url');
 }
+
+export function generateInviteToken(): string {
+  return randomBytes(TOKEN_BYTES).toString('base64url');
+}
+
+export function generateEmailChangeToken(): string {
+  return randomBytes(TOKEN_BYTES).toString('base64url');
+}

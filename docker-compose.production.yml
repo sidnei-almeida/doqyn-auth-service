@@ -1,0 +1,64 @@
+# Produção — auth-service isolado (sem alpha).
+# Para stack completa, use doqyn-alpha-document-intelligence/deploy/docker-compose.production.yml
+
+services:
+  postgres-auth:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-doqyn_auth}
+      POSTGRES_USER: ${POSTGRES_USER:-doqyn_auth}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-doqyn_auth_password}
+    volumes:
+      - postgres_auth_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-doqyn_auth} -d ${POSTGRES_DB:-doqyn_auth}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    restart: unless-stopped
+
+  auth-migrate:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: migrate
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-doqyn_auth}:${POSTGRES_PASSWORD:-doqyn_auth_password}@postgres-auth:5432/${POSTGRES_DB:-doqyn_auth}
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+    restart: "no"
+
+  auth-api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: runner
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-doqyn_auth}:${POSTGRES_PASSWORD:-doqyn_auth_password}@postgres-auth:5432/${POSTGRES_DB:-doqyn_auth}
+    ports:
+      - "127.0.0.1:${PORT:-4100}:4100"
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+      auth-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4100/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  postgres_auth_data:

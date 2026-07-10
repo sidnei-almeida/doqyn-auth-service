@@ -55,11 +55,19 @@ enum AccessRequestStatus {
   cancelled
 }
 
+enum InviteStatus {
+  pending
+  accepted
+  expired
+  revoked
+}
+
 enum TermsAcceptanceFlow {
   company_registration
   access_request
   individual_registration
   reacceptance
+  invite_accept
 }
 
 model AuthUser {
@@ -88,12 +96,15 @@ model AuthUser {
   sessions           AuthSession[]
   passwordResets     AuthPasswordReset[]
   emailVerifications AuthEmailVerification[]
+  emailChanges       AuthEmailChange[]
   auditLogs          AuthAuditLog[]
   memberships        AuthMembership[]
   accessRequests     AuthAccessRequest[]
   deletionRequests   AuthAccountDeletionRequest[]
   termsAcceptances   AuthTermsAcceptance[]
   oauthAccounts      AuthOAuthAccount[]
+  invitesSent        AuthInvite[]               @relation("InviteInvitedByUser")
+  invitesAccepted    AuthInvite[]               @relation("InviteAcceptedByUser")
 
   @@index([whatsappLookupHash])
   @@index([status])
@@ -161,6 +172,23 @@ model AuthEmailVerification {
   @@map("auth_email_verifications")
 }
 
+model AuthEmailChange {
+  id                 String    @id @default(uuid()) @db.Uuid
+  userId             String    @map("user_id") @db.Uuid
+  newEmailEncrypted  String    @map("new_email_encrypted")
+  newEmailLookupHash String    @map("new_email_lookup_hash")
+  tokenHash          String    @unique @map("token_hash")
+  expiresAt          DateTime  @map("expires_at")
+  usedAt             DateTime? @map("used_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+  @@index([newEmailLookupHash])
+  @@map("auth_email_changes")
+}
+
 model AuthLoginAttempt {
   id              String   @id @default(uuid()) @db.Uuid
   emailLookupHash String?  @map("email_lookup_hash")
@@ -218,6 +246,8 @@ model AuthTenant {
   accessGroups   AuthAccessGroup[]
   accessRequests AuthAccessRequest[]
   termsAcceptances AuthTermsAcceptance[]
+  invites        AuthInvite[]
+  outboundEmail  AuthTenantOutboundEmail?
 
   @@index([taxIdHash])
   @@index([status])
@@ -417,4 +447,64 @@ model AuthOAuthAccount {
   @@index([email])
   @@index([provider, email])
   @@map("auth_oauth_accounts")
+}
+
+model AuthInvite {
+  id                      String       @id @default(uuid()) @db.Uuid
+  tenantId                String       @map("tenant_id") @db.Uuid
+  emailEncrypted          String       @map("email_encrypted")
+  emailLookupHash         String       @map("email_lookup_hash")
+  firstNameEncrypted      String?      @map("first_name_encrypted")
+  lastNameEncrypted       String?      @map("last_name_encrypted")
+  invitedByUserId         String       @map("invited_by_user_id") @db.Uuid
+  invitedByMembershipId   String       @map("invited_by_membership_id") @db.Uuid
+  tokenHash               String       @unique @map("token_hash")
+  status                  InviteStatus @default(pending)
+  expiresAt               DateTime     @map("expires_at")
+  acceptedAt              DateTime?    @map("accepted_at")
+  acceptedByUserId        String?      @map("accepted_by_user_id") @db.Uuid
+  acceptedMembershipId    String?      @map("accepted_membership_id") @db.Uuid
+  createdAt               DateTime     @default(now()) @map("created_at")
+  updatedAt               DateTime     @updatedAt @map("updated_at")
+
+  tenant           AuthTenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedByUser    AuthUser         @relation("InviteInvitedByUser", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  acceptedByUser   AuthUser?        @relation("InviteAcceptedByUser", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  roles            AuthInviteRole[]
+
+  @@index([tenantId, emailLookupHash, status])
+  @@index([tenantId, status])
+  @@index([expiresAt])
+  @@map("auth_invites")
+}
+
+model AuthInviteRole {
+  id        String     @id @default(uuid()) @db.Uuid
+  inviteId  String     @map("invite_id") @db.Uuid
+  role      TenantRole
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  invite AuthInvite @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+
+  @@unique([inviteId, role])
+  @@map("auth_invite_roles")
+}
+
+model AuthTenantOutboundEmail {
+  id                    String    @id @default(uuid()) @db.Uuid
+  tenantId              String    @unique @map("tenant_id") @db.Uuid
+  smtpHost              String    @map("smtp_host")
+  smtpPort              Int       @default(587) @map("smtp_port")
+  smtpSecure            Boolean   @default(false) @map("smtp_secure")
+  smtpUserEncrypted     String    @map("smtp_user_encrypted")
+  smtpPasswordEncrypted String    @map("smtp_password_encrypted")
+  fromDomain            String    @map("from_domain")
+  enabled               Boolean   @default(true)
+  lastVerifiedAt        DateTime? @map("last_verified_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  tenant AuthTenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("auth_tenant_outbound_email")
 }

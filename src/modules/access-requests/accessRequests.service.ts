@@ -15,6 +15,7 @@ import {
   normalizeTaxId,
 } from '../../utils/normalize.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
+import { scheduleTenantMemberSync } from '../../integrations/memberSync.js';
 import { recordTermsAcceptance } from '../terms/termsAcceptance.service.js';
 import type { AccessRequestInput } from './accessRequests.schemas.js';
 import { CONSENT_TEXT_VERSION } from './accessRequests.constants.js';
@@ -222,6 +223,8 @@ export async function submitAccessRequest(
     ipHash,
     userAgentHash,
   });
+
+  scheduleTenantMemberSync(result.membershipId);
 
   return { ok: true, message: SUCCESS_MESSAGE };
 }

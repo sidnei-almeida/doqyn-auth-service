@@ -6,6 +6,7 @@ import { normalizeEmail } from '../../utils/normalize.js';
 import {
   buildConsentFromRecord,
   buildNotificationPreferencesDto,
+  buildRequestedAccessFromMembership,
   buildRequestedAccessFromRecord,
   serializeAdminAccessRequest,
 } from '../access-requests/accessRequests.admin.js';
@@ -33,6 +34,7 @@ import {
 } from './adminAuthorization.js';
 import type { AdminActor } from './admin.types.js';
 import type { ApproveMembershipInput } from './admin.schemas.js';
+import { scheduleTenantMemberSync } from '../../integrations/memberSync.js';
 
 export interface ListMembersFilters {
   tenantId?: string;
@@ -184,7 +186,9 @@ export async function getMemberDetail(
       displayName: tenantDisplayName,
       status: membership.tenant.status,
     },
-    requestedAccess: accessRequest ? buildRequestedAccessFromRecord(accessRequest) : undefined,
+    requestedAccess: accessRequest
+      ? buildRequestedAccessFromRecord(accessRequest)
+      : buildRequestedAccessFromMembership(membership, membership.tenant),
     consent: accessRequest ? buildConsentFromRecord(accessRequest) : undefined,
     notificationPreferences: buildNotificationPreferencesDto(notificationPreferences) ?? undefined,
     createdAt: membership.createdAt.toISOString(),
@@ -221,6 +225,7 @@ export async function updateMemberRoles(
   );
 
   const updated = await findMembershipById(membershipId);
+  scheduleTenantMemberSync(membershipId);
   return toPublicMembership(updated!);
 }
 
@@ -248,6 +253,7 @@ export async function updateMemberAccessGroups(
   );
 
   const updated = await findMembershipById(membershipId);
+  scheduleTenantMemberSync(membershipId);
   return toPublicMembership(updated!);
 }
 
@@ -283,7 +289,8 @@ export async function removeMember(
     }),
   );
 
-  const updated = await findMembershipById(membershipId);
+  const updated = await findMembershipById(targetMembershipId);
+  scheduleTenantMemberSync(targetMembershipId);
   return toPublicMembership(updated!);
 }
 
@@ -379,6 +386,7 @@ export async function approveMembership(
   );
 
   const updated = await findMembershipById(targetMembershipId);
+  scheduleTenantMemberSync(targetMembershipId);
   return toPublicMembership(updated!);
 }
 
@@ -428,6 +436,7 @@ export async function rejectMembership(
   );
 
   const updated = await findMembershipById(targetMembershipId);
+  scheduleTenantMemberSync(targetMembershipId);
   return toPublicMembership(updated!);
 }
 
@@ -478,6 +487,7 @@ export async function blockMembership(
   );
 
   const updated = await findMembershipById(targetMembershipId);
+  scheduleTenantMemberSync(targetMembershipId);
   return toPublicMembership(updated!);
 }
 
@@ -522,6 +532,7 @@ export async function unblockMembership(
   );
 
   const updated = await findMembershipById(targetMembershipId);
+  scheduleTenantMemberSync(targetMembershipId);
   return toPublicMembership(updated!);
 }
 

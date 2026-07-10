@@ -15,6 +15,7 @@ import { adminRoutes } from './modules/admin/admin.routes.js';
 import { accountRoutes } from './modules/account/account.routes.js';
 import { internalRoutes } from './modules/internal/internal.routes.js';
 import { oauthRoutes } from './modules/oauth/oauth.routes.js';
+import { inviteRoutes } from './modules/invites/invites.routes.js';
 
 export async function buildApp() {
   const env = loadEnv();
@@ -74,6 +75,7 @@ export async function buildApp() {
   });
 
   await app.register(authRoutes);
+  await app.register(inviteRoutes);
   await app.register(oauthRoutes);
   await app.register(adminRoutes);
   await app.register(accountRoutes);

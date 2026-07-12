@@ -16,7 +16,8 @@ const envSchema = z.object({
   ALLOWED_ORIGINS: z.string().default('http://localhost:5173'),
   DOQYN_INTERNAL_API_KEY: z.string().min(1),
   DOQYN_APP_BASE_URL: z.string().default('http://127.0.0.1:3001'),
-  DOQYN_APP_INTERNAL_API_KEY: z.string().default('dev-app-internal-api-key-change-in-production'),
+  // Sem default fraco — em production exige chave explícita e forte.
+  DOQYN_APP_INTERNAL_API_KEY: z.string().min(1).optional().default(''),
   DATA_ENCRYPTION_KEY: z.string().min(1),
   LOOKUP_HASH_SECRET: z.string().min(1),
   SESSION_TOKEN_HASH_SECRET: z.string().min(1),
@@ -75,11 +76,34 @@ const envSchema = z.object({
     .transform((v) => v === 'true'),
   SMTP_USER: z.string().optional().default(''),
   SMTP_PASSWORD: z.string().optional().default(''),
-});
+  DATABASE_URL_DIRECT: z.string().optional().default(''),
+  REDIS_ENABLED: z
+    .string()
+    .optional()
+    .default('false')
+    .transform((v) => v === 'true'),
+  REDIS_URL: z.string().optional().default(''),
+  REDIS_KEY_PREFIX: z.string().optional().default('doqyn:'),
+  RATE_LIMIT_REDIS_ENABLED: z
+    .string()
+    .optional()
+    .default('true')
+    .transform((v) => v === 'true'),
+}).transform((data) => ({
+  ...data,
+  DATABASE_URL_DIRECT: data.DATABASE_URL_DIRECT?.trim() || data.DATABASE_URL,
+}));
 
 export type Env = z.infer<typeof envSchema>;
 
 let cachedEnv: Env | null = null;
+
+const WEAK_APP_INTERNAL_KEYS = new Set([
+  '',
+  'dev-app-internal-api-key-change-in-production',
+  'change-me',
+  'changeme',
+]);
 
 export function loadEnv(overrides?: Record<string, string>): Env {
   if (cachedEnv && !overrides) {
@@ -91,11 +115,26 @@ export function loadEnv(overrides?: Record<string, string>): Env {
     throw new Error(`Invalid environment variables: ${parsed.error.message}`);
   }
 
-  if (!overrides) {
-    cachedEnv = parsed.data;
+  const data = parsed.data;
+  const appKey = data.DOQYN_APP_INTERNAL_API_KEY?.trim() ?? '';
+
+  if (data.NODE_ENV === 'production') {
+    if (WEAK_APP_INTERNAL_KEYS.has(appKey) || appKey.length < 24) {
+      throw new Error(
+        'DOQYN_APP_INTERNAL_API_KEY inválida em production: defina uma chave forte (≥24 chars) sem o valor de desenvolvimento.',
+      );
+    }
+  } else if (!appKey) {
+    // Dev/test: fallback explícito e óbvio (nunca em production).
+    (data as { DOQYN_APP_INTERNAL_API_KEY: string }).DOQYN_APP_INTERNAL_API_KEY =
+      'dev-app-internal-api-key-change-in-production';
   }
 
-  return parsed.data;
+  if (!overrides) {
+    cachedEnv = data;
+  }
+
+  return data;
 }
 
 export function resetEnvCache(): void {

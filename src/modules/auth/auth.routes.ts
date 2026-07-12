@@ -52,6 +52,10 @@ import { submitIndividualSignup } from '../individual-signups/individualSignups.
 import { requireSession, type AuthenticatedRequest } from '../admin/adminAuth.js';
 import { AUTH_ERROR_MESSAGES } from '../../utils/authErrorCodes.js';
 import { assertDatabaseAvailable } from '../../utils/routeErrors.js';
+import {
+  checkAccessRequestRateLimit,
+  checkSignupRateLimit,
+} from '../../security/rateLimit.js';
 
 function getSessionTokenFromRequest(request: FastifyRequest): string | undefined {
   const cookieName = getSessionCookieName();
@@ -153,6 +157,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       });
     }
     const ctx = extractRequestContext(request);
+    await checkAccessRequestRateLimit(ctx.ipHash);
 
     const result = await submitAccessRequest(parsed.data, ctx.ipHash, ctx.userAgentHash);
     return reply.send(result);
@@ -169,6 +174,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       });
     }
     const ctx = extractRequestContext(request);
+    await checkSignupRateLimit(ctx.ipHash);
 
     const result = await submitCompanySignup(parsed.data, ctx.ipHash, ctx.userAgentHash);
 
@@ -196,6 +202,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       });
     }
     const ctx = extractRequestContext(request);
+    await checkSignupRateLimit(ctx.ipHash);
 
     const result = await submitIndividualSignup(parsed.data, ctx.ipHash, ctx.userAgentHash);
 

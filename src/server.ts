@@ -5,6 +5,7 @@ import {
   checkDatabaseConnection,
 } from './db/databaseHealth.js';
 import { disconnectPrisma, prisma } from './db/prisma.js';
+import { connectRedisOnBoot, closeRedis } from './redis/redisClient.js';
 
 async function main() {
   const env = loadEnv();
@@ -13,6 +14,8 @@ async function main() {
     console.error('DATABASE_URL não configurada.');
     process.exit(1);
   }
+
+  await connectRedisOnBoot();
 
   const dbCheck = await checkDatabaseConnection(prisma);
   if (!dbCheck.ok) {
@@ -26,6 +29,7 @@ async function main() {
   const shutdown = async () => {
     await app.close();
     await disconnectPrisma();
+    await closeRedis();
     process.exit(0);
   };
 

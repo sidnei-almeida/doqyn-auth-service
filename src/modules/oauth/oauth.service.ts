@@ -63,7 +63,7 @@ export async function completeOAuthCallback(input: {
   ctx: RequestContext;
 }): Promise<OAuthCallbackResult> {
   try {
-    checkOAuthRateLimit(input.ctx.ipHash);
+    await checkOAuthRateLimit(input.ctx.ipHash);
   } catch {
     return {
       ok: false,

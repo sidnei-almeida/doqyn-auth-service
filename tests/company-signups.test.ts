@@ -156,7 +156,7 @@ describe('company signups', () => {
     });
 
     expect(response.statusCode).toBe(400);
-    expect(response.json().code).toBe('PROVISIONING_FAILED');
+    expect(response.json().code).toBe('TENANT_PROVISIONING_FAILED');
 
     const tenant = await prisma.authTenant.findFirst({
       where: { taxIdHash: { not: null }, status: 'provisioning_failed' },

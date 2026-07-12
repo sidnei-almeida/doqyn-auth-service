@@ -125,6 +125,8 @@ export function resolveOAuthPostLoginStatus(
   switch (accessError.code) {
     case 'MEMBERSHIP_PENDING':
       return 'membership_pending';
+    case 'TENANT_PROVISIONING_FAILED':
+      return 'membership_pending';
     case 'MEMBERSHIP_BLOCKED':
       return 'membership_blocked';
     case 'MEMBERSHIP_REJECTED':

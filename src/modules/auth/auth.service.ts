@@ -74,7 +74,7 @@ export async function login(
   const emailLookupHash = hashLookup(normalizedEmail);
 
   try {
-    checkLoginRateLimit(ctx.ipHash, emailLookupHash);
+    await checkLoginRateLimit(ctx.ipHash, emailLookupHash);
   } catch {
     await recordLoginAttempt(emailLookupHash, ctx.ipHash, false, 'rate_limit');
     return {
@@ -153,11 +153,26 @@ export async function login(
   }
 
   const { listUserMemberships } = await import('../memberships/memberships.service.js');
-  const memberships = await listUserMemberships(user.id);
-  const activeMemberships = memberships.filter(
+  let memberships = await listUserMemberships(user.id);
+  let activeMemberships = memberships.filter(
     (membership) => membership.status === 'active' && membership.tenant.status === 'active',
   );
-  const visibleMemberships = memberships.filter((membership) => membership.status !== 'removed');
+  let visibleMemberships = memberships.filter((membership) => membership.status !== 'removed');
+
+  // Auto-retry: tenant stuck em provisioning_failed (ex.: Mongo estava offline no signup).
+  if (activeMemberships.length === 0 && visibleMemberships.length > 0) {
+    const { retryProvisioningForUserMemberships } = await import(
+      '../../integrations/provisionRetry.js'
+    );
+    const recovered = await retryProvisioningForUserMemberships(visibleMemberships);
+    if (recovered) {
+      memberships = await listUserMemberships(user.id);
+      activeMemberships = memberships.filter(
+        (membership) => membership.status === 'active' && membership.tenant.status === 'active',
+      );
+      visibleMemberships = memberships.filter((membership) => membership.status !== 'removed');
+    }
+  }
 
   if (activeMemberships.length === 0 && visibleMemberships.length > 0) {
     const accessError = resolveMembershipAccessError(memberships);
@@ -296,7 +311,7 @@ export async function handlePasswordResetRequest(
   const emailLookupHash = hashLookup(normalizedEmail);
 
   try {
-    checkPasswordResetRequestRateLimit(ctx.ipHash, emailLookupHash);
+    await checkPasswordResetRequestRateLimit(ctx.ipHash, emailLookupHash);
   } catch {
     return { ok: true, message: GENERIC_RESET_MESSAGE };
   }
@@ -324,7 +339,7 @@ export async function handlePasswordReset(
   ctx: RequestContext,
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   try {
-    checkPasswordResetRateLimit(ctx.ipHash);
+    await checkPasswordResetRateLimit(ctx.ipHash);
   } catch {
     return { ok: false, message: 'Muitas tentativas. Tente novamente mais tarde.' };
   }

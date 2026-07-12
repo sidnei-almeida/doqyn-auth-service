@@ -110,7 +110,7 @@ describe('individual signups', () => {
     });
 
     expect(response.statusCode).toBe(400);
-    expect(response.json().code).toBe('PROVISIONING_FAILED');
+    expect(response.json().code).toBe('TENANT_PROVISIONING_FAILED');
 
     const taxIdHash = hashLookup(normalizeTaxId('39053344705'));
     const tenant = await prisma.authTenant.findFirst({ where: { taxIdHash } });

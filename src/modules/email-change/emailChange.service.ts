@@ -95,7 +95,7 @@ export async function requestEmailChange(
   ipHash?: string,
 ) {
   if (ipHash) {
-    checkEmailChangeRequestRateLimit(ipHash, userId);
+    await checkEmailChangeRequestRateLimit(ipHash, userId);
   }
 
   const user = await findUserById(userId);
@@ -242,7 +242,7 @@ export async function previewEmailChange(token: string) {
 
 export async function confirmEmailChange(token: string, ipHash?: string) {
   if (ipHash) {
-    checkEmailChangeConfirmRateLimit(ipHash);
+    await checkEmailChangeConfirmRateLimit(ipHash);
   }
 
   const change = await findEmailChangeByToken(token);

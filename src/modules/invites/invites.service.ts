@@ -90,7 +90,7 @@ export async function createInvite(
   ipHash?: string,
 ) {
   if (ipHash) {
-    checkInviteCreateRateLimit(ipHash);
+    await checkInviteCreateRateLimit(ipHash);
   }
 
   const email = normalizeEmail(input.email);
@@ -302,7 +302,7 @@ export async function acceptInvite(
   userAgentHash?: string,
 ) {
   if (ipHash) {
-    checkInviteAcceptRateLimit(ipHash);
+    await checkInviteAcceptRateLimit(ipHash);
   }
 
   const invite = await findInviteByToken(token);

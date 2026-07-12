@@ -22,6 +22,21 @@ export function resolveMembershipAccessError(memberships: MembershipLike[]): {
     };
   }
 
+  // Provisionamento falhou — prioridade sobre MEMBERSHIP_PENDING genérico.
+  const provisioningFailed = visible.find(
+    (membership) =>
+      membership.tenant?.status === 'provisioning_failed' ||
+      membership.tenant?.status === 'pending_provisioning',
+  );
+  if (provisioningFailed) {
+    return {
+      code: 'TENANT_PROVISIONING_FAILED',
+      message: AUTH_ERROR_MESSAGES.TENANT_PROVISIONING_FAILED,
+      statusCode: 403,
+      details: { status: provisioningFailed.tenant?.status ?? 'provisioning_failed' },
+    };
+  }
+
   const blocked = visible.find((membership) => membership.status === 'blocked');
   if (blocked) {
     return {

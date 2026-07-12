@@ -34,7 +34,11 @@ export async function createTestUser(
 
 export async function createTestTenant(
   tenantId: string,
-  opts?: { tenantType?: 'individual' | 'business'; displayName?: string; status?: 'pending' | 'active' | 'blocked' },
+  opts?: {
+    tenantType?: 'individual' | 'business';
+    displayName?: string;
+    status?: 'pending' | 'active' | 'blocked' | 'pending_provisioning' | 'provisioning_failed';
+  },
 ) {
   return createTenant({
     tenantId,

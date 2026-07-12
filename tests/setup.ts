@@ -13,6 +13,14 @@ export const TEST_ENV = {
     process.env.TEST_DATABASE_URL ||
     process.env.DATABASE_URL ||
     'postgresql://doqyn_auth:doqyn_auth_password@localhost:5433/doqyn_auth',
+  DATABASE_URL_DIRECT:
+    process.env.TEST_DATABASE_URL_DIRECT ||
+    process.env.DATABASE_URL_DIRECT ||
+    process.env.TEST_DATABASE_URL ||
+    process.env.DATABASE_URL ||
+    'postgresql://doqyn_auth:doqyn_auth_password@localhost:5433/doqyn_auth',
+  REDIS_ENABLED: 'false',
+  RATE_LIMIT_REDIS_ENABLED: 'false',
   SESSION_COOKIE_NAME: 'doqyn_session',
   SESSION_TTL_DAYS: '7',
   COOKIE_DOMAIN: '',

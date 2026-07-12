@@ -1,6 +1,5 @@
 import { prisma } from '../../db/prisma.js';
-import { provisionTenantInMainApp } from '../../integrations/appProvisioning.js';
-import { encryptField, hashLookup, hashSessionToken } from '../../security/crypto.js';
+import { encryptField, hashLookup } from '../../security/crypto.js';
 import { hashPassword, validatePasswordStrength } from '../../security/password.js';
 import { ConflictError, ValidationError } from '../../utils/errors.js';
 import {
@@ -12,14 +11,14 @@ import {
   slugify,
 } from '../../utils/normalize.js';
 import { generateIndividualTenantId } from '../../utils/tenantId.js';
-import { logAuthAudit } from '../audit/authAudit.service.js';
 import { recordTermsAcceptance } from '../terms/termsAcceptance.service.js';
 import type { PublicMembership } from '../memberships/memberships.schemas.js';
-import { toPublicMembership } from '../memberships/memberships.service.js';
-import { createSession } from '../sessions/sessions.service.js';
 import type { PublicUser } from '../users/users.schemas.js';
-import { toPublicUser } from '../users/users.service.js';
 import type { IndividualSignupInput } from './individualSignups.schemas.js';
+import {
+  finalizeSignupProvisioning,
+  logSignupCreatedAudits,
+} from '../signups/signupOrchestrator.js';
 
 export const SHARED_INDIVIDUAL_COLLECTION_PREFIX = 'compartilhado';
 
@@ -144,89 +143,31 @@ export async function submitIndividualSignup(
     return { user, tenant, membership };
   });
 
-  const auditBase = {
+  await logSignupCreatedAudits('individual_signup', {
     userId: created.user.id,
     tenantTextId: created.tenant.tenantId,
     targetMembershipId: created.membership.id,
     ipHash,
     userAgentHash,
-  };
+  });
 
-  await logAuthAudit('individual_signup.requested', auditBase);
-  await logAuthAudit('individual_signup.tenant_created', auditBase);
-  await logAuthAudit('individual_signup.admin_created', auditBase);
-  await logAuthAudit('individual_signup.provision_started', auditBase);
-
-  const provision = await provisionTenantInMainApp({
-    tenantId: created.tenant.tenantId,
+  const result = await finalizeSignupProvisioning({
+    created,
     tenantType: 'individual',
     displayName,
     collectionPrefix: SHARED_INDIVIDUAL_COLLECTION_PREFIX,
-    createdByUserId: created.user.id,
-    createdByMembershipId: created.membership.id,
-  });
-
-  if (!provision.ok) {
-    await prisma.authTenant.update({
-      where: { id: created.tenant.id },
-      data: { status: 'provisioning_failed' },
-    });
-
-    await logAuthAudit('individual_signup.provision_failed', {
-      ...auditBase,
-      metadata: { error: provision.error, statusCode: provision.statusCode },
-    });
-
-    throw new ValidationError(PROVISIONING_FAILURE_MESSAGE, 'PROVISIONING_FAILED');
-  }
-
-  const activated = await prisma.$transaction(async (tx) => {
-    const tenant = await tx.authTenant.update({
-      where: { id: created.tenant.id },
-      data: { status: 'active' },
-    });
-
-    const membership = await tx.authMembership.update({
-      where: { id: created.membership.id },
-      data: { status: 'active', approvedAt: new Date() },
-      include: {
-        tenant: true,
-        roles: true,
-        accessGroupLinks: { include: { accessGroup: true } },
-      },
-    });
-
-    return { tenant, membership };
-  });
-
-  await logAuthAudit('individual_signup.provision_succeeded', auditBase);
-
-  const session = await createSession(created.user.id, ipHash, userAgentHash);
-  await prisma.authSession.update({
-    where: { sessionTokenHash: hashSessionToken(session.token) },
-    data: { activeMembershipId: activated.membership.id },
-  });
-
-  const membershipWithRelations = await prisma.authMembership.findUniqueOrThrow({
-    where: { id: activated.membership.id },
-    include: {
-      tenant: true,
-      roles: true,
-      accessGroupLinks: { include: { accessGroup: true } },
-    },
+    successMessage: 'Seu acesso CPF foi criado com sucesso.',
+    provisioningFailureMessage: PROVISIONING_FAILURE_MESSAGE,
+    auditPrefix: 'individual_signup',
+    ipHash,
+    userAgentHash,
   });
 
   return {
-    ok: true,
-    message: 'Seu acesso CPF foi criado com sucesso.',
-    user: toPublicUser(created.user),
+    ...result,
     tenant: {
-      tenantId: activated.tenant.tenantId,
+      ...result.tenant,
       tenantType: 'individual',
-      displayName,
-      status: activated.tenant.status,
     },
-    activeMembership: toPublicMembership(membershipWithRelations),
-    sessionToken: session.token,
   };
 }

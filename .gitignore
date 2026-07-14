@@ -19,6 +19,8 @@ docs/
 
 # Artefatos locais de teste manual (curl -c cookies.txt)
 cookies.txt
+cookies-auth.txt
+tsconfig.tsbuildinfo
 
 # Demo seed (manifest e relatório local)
 .generated/

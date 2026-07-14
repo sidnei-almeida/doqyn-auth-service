@@ -23,6 +23,7 @@
     "audit:db-counts": "tsx scripts/audit-db-counts.ts",
     "audit:auth-health": "tsx scripts/audit-auth-health.ts",
     "audit:auth-storage": "tsx scripts/audit-auth-storage.ts",
+    "env:alpha-sync": "node scripts/env-alpha-sync-check.mjs",
     "dev:db": "docker compose up -d postgres-auth",
     "dev:db:status": "docker compose ps postgres-auth",
     "dev:db:logs": "docker compose logs -f postgres-auth",

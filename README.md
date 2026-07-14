@@ -9,22 +9,26 @@ API independente usada pelo frontend DOQYN e pela API principal. O usuário fina
 ## O que faz
 
 - Autenticação (login, logout, sessão, reset de senha)
+- Login social OAuth **cliente** (Google e Microsoft), quando configurado
 - Identidade de usuários com PII criptografada
 - **Tenants** (empresas e pessoas físicas)
 - **Memberships** (vínculo usuário ↔ tenant)
 - **Roles** (`doqyn_admin`, `company_admin`, `individual_admin`, `user`)
 - **Access groups** (grupos de acesso por tenant)
 - **Solicitações de acesso** públicas
+- **Convites**, troca de e-mail, SMTP por tenant (opcionales)
 - **Admin** (aprovar, rejeitar, bloquear, gerenciar acesso)
 - Auditoria de autenticação e acesso
+- Endpoints **internos** para o Alpha (`/internal/sessions/verify`, etc.)
 
 ## O que **não** faz
 
-- OIDC / SAML / OAuth provider completo
-- Social login
-- Documentos, upload, OCR, IA ou storage
-- Regras documentais detalhadas ou permissões por documento
+- Não é um IdP OIDC/SAML completo (não emite tokens para third-parties como um provider OAuth2 server)
+- Documentos, upload, OCR, IA ou storage documental
+- Regras documentais detalhadas ou permissões por documento no Mongo
 - Metadados documentais (isso fica no **MongoDB** da API principal)
+
+> **OAuth cliente (social login):** Google e Microsoft **já estão implementados** como login OIDC *cliente* (`/oauth/google/*`, `/oauth/microsoft/*`). Não confundir com “ser um provedor OAuth”.
 
 ## Divisão de responsabilidades
 
@@ -126,12 +130,12 @@ Cria (somente em `NODE_ENV !== production`):
 | Item | Valor |
 |------|-------|
 | Tenant | `company_dev` (business, active) |
-| Usuário | `sidnei@doqyn.dev` |
-| Senha | `SEED_DEV_PASSWORD` ou `dev-password-change-me` |
-| Roles | `company_admin`, `user` |
-| Grupos | `group_financeiro`, `group_juridico`, `group_rh`, `group_compras`, `group_diretoria` |
+| Usuário admin | `sidnei@doqyn.dev` — roles `doqyn_admin`, `company_admin`, `user` |
+| Usuário teste | `teste.juridico@doqyn.dev` — role `user` |
+| Senha (ambos) | `SEED_DEV_PASSWORD` ou default **`DevDoqyn@123`** |
+| Grupos | **Nenhum grupo padrão** é criado pelo seed; crie via admin se precisar |
 
-Sidnei é vinculado a **todos os grupos** (decisão documentada para facilitar testes em dev).
+Password hash de usuários existentes só é sobrescrito com `SEED_FORCE_PASSWORD_RESET=true`.
 
 ## Testar login
 
@@ -139,7 +143,7 @@ Sidnei é vinculado a **todos os grupos** (decisão documentada para facilitar t
 curl -X POST http://localhost:4100/auth/login \
   -H "Content-Type: application/json" \
   -c cookies.txt \
-  -d '{"email":"sidnei@doqyn.dev","password":"dev-password-change-me"}'
+  -d '{"email":"sidnei@doqyn.dev","password":"DevDoqyn@123"}'
 
 curl http://localhost:4100/auth/session -b cookies.txt
 ```
@@ -230,13 +234,34 @@ Requerem `Authorization: Bearer <DOQYN_INTERNAL_API_KEY>`.
 | POST | `/internal/users` | Cria usuário |
 | ... | ... | disable/enable/by-email |
 
-## Integração futura com app principal
+## Integração com o app principal (DoQyn Alpha)
 
-1. Frontend chama `/auth/*` com `credentials: 'include'`
-2. API principal lê cookie e chama `POST /internal/sessions/verify`
+Já suportada com `AUTH_PROVIDER=doqyn_auth` no Alpha:
+
+1. Frontend chama `/auth/*` com `credentials: 'include'` (proxy Vite/nginx → este serviço)
+2. API principal lê o cookie e chama `POST /internal/sessions/verify`
 3. Recebe `user` + `activeMembership` (roles, accessGroupIds)
 4. MongoDB resolve documentos e metadados documentais
-5. `/api/me` agrega identidade + acesso + contexto documental
+5. `/api/me` no Alpha agrega identidade + acesso + contexto documental
+
+Chaves que devem ser idênticas entre os `.env`:
+
+| Auth | Alpha |
+|------|-------|
+| `DOQYN_INTERNAL_API_KEY` | `DOQYN_AUTH_INTERNAL_API_KEY` |
+| `DOQYN_APP_INTERNAL_API_KEY` | `DOQYN_APP_INTERNAL_API_KEY` |
+| `SESSION_COOKIE_NAME` | `DOQYN_AUTH_COOKIE_NAME` |
+
+Validação (a partir do Alpha ou deste repo):
+
+```bash
+# No Alpha:
+npm run env:auth-sync
+# Neste auth-service (se o Alpha estiver como irmão):
+npm run env:alpha-sync
+```
+
+Doc: `../doqyn-alpha-document-intelligence/docs/ENV_SYNC.md`
 
 ## Segurança
 
@@ -266,7 +291,12 @@ npm run lint
 
 ## Pendências
 
-- Envio de e-mail (reset, verificação, notificações)
-- Integração `AUTH_PROVIDER=doqyn_auth` na API principal
-- Rate limit distribuído (Redis)
+- Envio de e-mail em produção (reset, verificação, notificações) — SMTP / `EMAIL_ENABLED`
+- Completar fluxo de `AuthEmailVerification` ou remover o model morto
+- Observabilidade e rate limit Redis em ambientes multi-réplica (código já tem fallback em memória)
 - Configurar Nginx na VPS (ver [docs/DEPLOY_VPS.md](docs/DEPLOY_VPS.md))
+
+## OAuth (cliente)
+
+Rotas: `GET /oauth/google/start|callback`, `GET /oauth/microsoft/start|callback`.  
+Configure `OAUTH_*_CLIENT_ID/SECRET` e redirects; veja `.env.example`. Com flags enabled e sem credenciais, o boot sobe mas o login social falha no handshake.

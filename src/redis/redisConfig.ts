@@ -22,7 +22,7 @@ export function getRedisUrl(): string | null {
 }
 
 export function getRedisKeyPrefix(): string {
-  return process.env.REDIS_KEY_PREFIX?.trim() || 'doqyn:';
+  return process.env.REDIS_KEY_PREFIX?.trim() || 'doqyn:auth:';
 }
 
 export function prefixRedisKey(key: string): string {

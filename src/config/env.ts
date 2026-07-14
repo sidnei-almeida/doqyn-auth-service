@@ -83,7 +83,7 @@ const envSchema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
   REDIS_URL: z.string().optional().default(''),
-  REDIS_KEY_PREFIX: z.string().optional().default('doqyn:'),
+  REDIS_KEY_PREFIX: z.string().optional().default('doqyn:auth:'),
   RATE_LIMIT_REDIS_ENABLED: z
     .string()
     .optional()

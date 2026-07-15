@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { loadEnv } from '../../config/env.js';
 import { ForbiddenError } from '../../utils/errors.js';
@@ -25,6 +26,14 @@ import {
 } from './internal.service.js';
 import { assertDatabaseAvailable } from '../../utils/routeErrors.js';
 
+/** Comparação em tempo constante para evitar timing attacks na chave interna. */
+function safeTokenEquals(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a, 'utf8');
+  const bBuf = Buffer.from(b, 'utf8');
+  if (aBuf.length !== bBuf.length) return false;
+  return timingSafeEqual(aBuf, bBuf);
+}
+
 function verifyInternalApiKey(request: FastifyRequest): void {
   const env = loadEnv();
   const authHeader = request.headers.authorization;
@@ -34,7 +43,7 @@ function verifyInternalApiKey(request: FastifyRequest): void {
   }
 
   const token = authHeader.slice(7);
-  if (token !== env.DOQYN_INTERNAL_API_KEY) {
+  if (!safeTokenEquals(token, env.DOQYN_INTERNAL_API_KEY)) {
     throw new ForbiddenError();
   }
 }

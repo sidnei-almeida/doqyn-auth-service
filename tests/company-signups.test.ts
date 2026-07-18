@@ -42,6 +42,8 @@ describe('company signups', () => {
 
   const payload = {
     companyName: 'ACME Teste',
+    country: 'BR',
+    taxIdType: 'cnpj',
     taxId: '11222333000181',
     firstName: 'Sidnei',
     lastName: 'Teste',

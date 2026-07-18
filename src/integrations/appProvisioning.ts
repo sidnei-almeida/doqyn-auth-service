@@ -4,6 +4,10 @@ export interface ProvisionTenantPayload {
   tenantId: string;
   tenantType: 'business' | 'individual';
   displayName: string;
+  /** ISO 3166-1 alpha-2 (ex.: BR, PY, US, ES). */
+  country: string;
+  /** Tipo de documento fiscal detectado (ex.: cpf, cnpj, ruc, ssn, ein). */
+  taxIdType: string;
   collectionPrefix: string;
   createdByUserId: string;
   createdByMembershipId: string;

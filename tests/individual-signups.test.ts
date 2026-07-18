@@ -45,6 +45,8 @@ describe('individual signups', () => {
     lastName: 'Silva',
     email: 'maria-cpf-dev@example.com',
     whatsapp: '+5554999887766',
+    country: 'BR',
+    taxIdType: 'cpf',
     taxId: '52998224725',
     password: 'senha-dev-123',
     confirmPassword: 'senha-dev-123',

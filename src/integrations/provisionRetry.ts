@@ -50,17 +50,32 @@ export async function retryFailedTenantProvisioning(
       ? SHARED_INDIVIDUAL_COLLECTION_PREFIX
       : tenant.tenantId;
 
+  // Tenants criados antes do suporte multi-país (ou pelo caminho de admin, que ainda não
+  // seta country) têm country/taxIdType nulos — assumir BR aqui é a mesma convenção usada
+  // no resto do app pra esses tenants legados, mas registrada no audit pra não ser silenciosa.
+  const usedFallbackCountry = tenant.country == null;
+  const usedFallbackTaxIdType = tenant.taxIdType == null;
+  const country = tenant.country ?? 'BR';
+  const taxIdType = tenant.taxIdType ?? (tenant.tenantType === 'individual' ? 'cpf' : 'cnpj');
+
   await logAuthAudit('tenant.provision_retry_started', {
     userId: membership.userId,
     tenantTextId: tenant.tenantId,
     targetMembershipId: membership.id,
-    metadata: { previousStatus: tenant.status },
+    metadata: {
+      previousStatus: tenant.status,
+      ...(usedFallbackCountry || usedFallbackTaxIdType
+        ? { defaultedCountry: usedFallbackCountry, defaultedTaxIdType: usedFallbackTaxIdType }
+        : {}),
+    },
   });
 
   const provision = await provisionTenantInMainApp({
     tenantId: tenant.tenantId,
     tenantType: tenant.tenantType === 'individual' ? 'individual' : 'business',
     displayName,
+    country,
+    taxIdType,
     collectionPrefix,
     createdByUserId: membership.userId,
     createdByMembershipId: membership.id,

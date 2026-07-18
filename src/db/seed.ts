@@ -47,6 +47,7 @@ async function ensureDevTenant() {
     create: {
       tenantId: DEV_TENANT_ID,
       tenantType: 'business',
+      country: 'BR',
       displayNameEncrypted: encryptField('DOQYN Dev'),
       displayNameLookupHash: hashLookup('doqyn dev'),
       slug: DEV_TENANT_ID,
@@ -55,6 +56,7 @@ async function ensureDevTenant() {
     update: {
       status: 'active',
       tenantType: 'business',
+      country: 'BR',
       displayNameEncrypted: encryptField('DOQYN Dev'),
     },
   });

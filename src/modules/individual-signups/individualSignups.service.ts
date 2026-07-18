@@ -1,9 +1,9 @@
+import type { CountryCode } from 'libphonenumber-js/min';
 import { prisma } from '../../db/prisma.js';
 import { encryptField, hashLookup } from '../../security/crypto.js';
 import { hashPassword, validatePasswordStrength } from '../../security/password.js';
 import { ConflictError, ValidationError } from '../../utils/errors.js';
 import {
-  detectTaxIdType,
   maskTaxId,
   normalizeEmail,
   normalizePhone,
@@ -50,20 +50,34 @@ export async function submitIndividualSignup(
   }
 
   const email = normalizeEmail(input.email);
-  const whatsapp = normalizePhone(input.whatsapp);
+  const whatsapp = normalizePhone(input.whatsapp, input.country as CountryCode);
   const taxId = normalizeTaxId(input.taxId);
   const taxIdHash = hashLookup(taxId);
   const emailLookupHash = hashLookup(email);
   const displayName = `${input.firstName.trim()} ${input.lastName.trim()}`.trim();
 
-  const existingTenant = await prisma.authTenant.findFirst({ where: { taxIdHash } });
+  // Escopado por país: o mesmo taxIdHash pode legitimamente colidir entre países diferentes
+  // (ex.: um CPF brasileiro e um SSN americano com a mesma sequência de dígitos). Tenants
+  // criados antes do suporte multi-país têm country nulo — tratados como BR (única origem
+  // possível pra eles), senão a checagem de duplicidade pararia de pegar duplicatas antigas.
+  const existingTenant = await prisma.authTenant.findFirst({
+    where:
+      input.country === 'BR'
+        ? { taxIdHash, OR: [{ country: 'BR' }, { country: null }] }
+        : { taxIdHash, country: input.country },
+  });
   if (
     existingTenant &&
     ['active', 'pending', 'pending_provisioning', 'provisioning_failed'].includes(
       existingTenant.status,
     )
   ) {
-    throw new ConflictError('Já existe um cadastro com este CPF.', 'CPF_ALREADY_EXISTS');
+    throw input.country === 'BR'
+      ? new ConflictError('Já existe um cadastro com este CPF.', 'CPF_ALREADY_EXISTS')
+      : new ConflictError(
+          'Já existe um cadastro com este documento fiscal.',
+          'TAX_ID_ALREADY_EXISTS',
+        );
   }
 
   const existingUser = await prisma.authUser.findUnique({ where: { emailLookupHash } });
@@ -101,7 +115,8 @@ export async function submitIndividualSignup(
         displayNameEncrypted: encryptField(displayName),
         displayNameLookupHash: hashLookup(displayName.toLowerCase()),
         slug: slugify(displayName),
-        taxIdType: detectTaxIdType(taxId),
+        country: input.country,
+        taxIdType: input.taxIdType,
         taxIdMasked: maskTaxId(taxId),
         taxIdHash,
         status: 'pending_provisioning',
@@ -155,6 +170,8 @@ export async function submitIndividualSignup(
     created,
     tenantType: 'individual',
     displayName,
+    country: input.country,
+    taxIdType: input.taxIdType,
     collectionPrefix: SHARED_INDIVIDUAL_COLLECTION_PREFIX,
     successMessage: 'Seu acesso CPF foi criado com sucesso.',
     provisioningFailureMessage: PROVISIONING_FAILURE_MESSAGE,

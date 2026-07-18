@@ -1,9 +1,9 @@
+import type { CountryCode } from 'libphonenumber-js/min';
 import { prisma } from '../../db/prisma.js';
 import { encryptField, hashLookup } from '../../security/crypto.js';
 import { hashPassword, validatePasswordStrength } from '../../security/password.js';
 import { ConflictError, ValidationError } from '../../utils/errors.js';
 import {
-  detectTaxIdType,
   maskTaxId,
   normalizeEmail,
   normalizePhone,
@@ -50,12 +50,21 @@ export async function submitCompanySignup(
   }
 
   const email = normalizeEmail(input.email);
-  const whatsapp = normalizePhone(input.whatsapp);
+  const whatsapp = normalizePhone(input.whatsapp, input.country as CountryCode);
   const taxId = normalizeTaxId(input.taxId);
   const taxIdHash = hashLookup(taxId);
   const emailLookupHash = hashLookup(email);
 
-  const existingTenant = await prisma.authTenant.findFirst({ where: { taxIdHash } });
+  // Escopado por país: o mesmo taxIdHash pode legitimamente colidir entre países diferentes
+  // (ex.: um CNPJ brasileiro e um RUC paraguaio com a mesma sequência de dígitos). Tenants
+  // criados antes do suporte multi-país têm country nulo — tratados como BR (única origem
+  // possível pra eles), senão a checagem de duplicidade pararia de pegar duplicatas antigas.
+  const existingTenant = await prisma.authTenant.findFirst({
+    where:
+      input.country === 'BR'
+        ? { taxIdHash, OR: [{ country: 'BR' }, { country: null }] }
+        : { taxIdHash, country: input.country },
+  });
   if (
     existingTenant &&
     ['active', 'pending', 'pending_provisioning', 'provisioning_failed'].includes(
@@ -63,7 +72,7 @@ export async function submitCompanySignup(
     )
   ) {
     throw new ConflictError(
-      'Já existe uma empresa cadastrada com este CNPJ.',
+      'Já existe uma empresa cadastrada com este documento fiscal.',
       'COMPANY_ALREADY_EXISTS',
     );
   }
@@ -106,7 +115,8 @@ export async function submitCompanySignup(
         displayNameEncrypted: encryptField(displayName),
         displayNameLookupHash: hashLookup(displayName.toLowerCase()),
         slug: slugify(input.companyName),
-        taxIdType: detectTaxIdType(taxId),
+        country: input.country,
+        taxIdType: input.taxIdType,
         taxIdMasked: maskTaxId(taxId),
         taxIdHash,
         status: 'pending_provisioning',
@@ -160,6 +170,8 @@ export async function submitCompanySignup(
     created,
     tenantType: 'business',
     displayName,
+    country: input.country,
+    taxIdType: input.taxIdType,
     collectionPrefix,
     successMessage: 'Empresa cadastrada com sucesso. Seu ambiente foi criado.',
     provisioningFailureMessage: PROVISIONING_FAILURE_MESSAGE,

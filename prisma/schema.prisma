@@ -234,6 +234,8 @@ model AuthTenant {
   displayNameEncrypted  String?      @map("display_name_encrypted")
   displayNameLookupHash String?      @map("display_name_lookup_hash")
   slug                  String?      @unique
+  /** ISO 3166-1 alpha-2 (ex.: BR, PY, US, ES). Determina validação de doc fiscal e formato de telefone no cadastro. */
+  country               String?      @map("country") @db.VarChar(2)
   taxIdType             String?      @map("tax_id_type")
   taxIdMasked           String?      @map("tax_id_masked")
   taxIdHash             String?      @map("tax_id_hash")
@@ -252,6 +254,7 @@ model AuthTenant {
 
   @@index([taxIdHash])
   @@index([status])
+  @@index([country])
   @@map("auth_tenants")
 }
 

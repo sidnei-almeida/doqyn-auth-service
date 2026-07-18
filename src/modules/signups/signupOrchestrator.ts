@@ -38,6 +38,10 @@ export async function finalizeSignupProvisioning(input: {
   created: CreatedSignupEntities;
   tenantType: 'individual' | 'business';
   displayName: string;
+  /** ISO 3166-1 alpha-2 do tenant (ex.: BR, PY, US, ES). */
+  country: string;
+  /** Tipo de documento fiscal detectado (ex.: cpf, cnpj, ruc, ssn, ein) — repassado ao Mongo, não fixo por tenantType. */
+  taxIdType: string;
   collectionPrefix: string;
   successMessage: string;
   provisioningFailureMessage: string;
@@ -59,6 +63,8 @@ export async function finalizeSignupProvisioning(input: {
     tenantId: input.created.tenant.tenantId,
     tenantType: input.tenantType,
     displayName: input.displayName,
+    country: input.country,
+    taxIdType: input.taxIdType,
     collectionPrefix: input.collectionPrefix,
     createdByUserId: input.created.user.id,
     createdByMembershipId: input.created.membership.id,

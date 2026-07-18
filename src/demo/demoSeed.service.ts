@@ -111,6 +111,7 @@ async function ensureBusinessTenant(company: DemoCompanyDef) {
     create: {
       tenantId: company.tenantId,
       tenantType: 'business',
+      country: 'BR',
       displayNameEncrypted: encryptField(company.displayName),
       displayNameLookupHash: hashLookup(company.displayName.toLowerCase()),
       slug: company.slug,
@@ -121,6 +122,7 @@ async function ensureBusinessTenant(company: DemoCompanyDef) {
     },
     update: {
       tenantType: 'business',
+      country: 'BR',
       displayNameEncrypted: encryptField(company.displayName),
       displayNameLookupHash: hashLookup(company.displayName.toLowerCase()),
       slug: company.slug,
@@ -335,6 +337,7 @@ async function ensureGlobalAdminTenant() {
     create: {
       tenantId: DEMO_GLOBAL_ADMIN_TENANT_ID,
       tenantType: 'business',
+      country: 'BR',
       displayNameEncrypted: encryptField('DOQYN Dev'),
       displayNameLookupHash: hashLookup('doqyn dev'),
       slug: DEMO_GLOBAL_ADMIN_TENANT_ID,
@@ -342,6 +345,7 @@ async function ensureGlobalAdminTenant() {
     },
     update: {
       tenantType: 'business',
+      country: 'BR',
       displayNameEncrypted: encryptField('DOQYN Dev'),
       displayNameLookupHash: hashLookup('doqyn dev'),
       status: 'active',

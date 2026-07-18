@@ -1,10 +1,7 @@
 import { z } from 'zod';
-import { normalizeTaxId } from '../../utils/normalize.js';
+import { isValidTaxIdForCountry } from '../../utils/taxIdValidation.js';
 import { termsAcceptanceFields } from '../terms/termsAcceptance.schemas.js';
-
-function isValidCpf(taxId: string): boolean {
-  return normalizeTaxId(taxId).length === 11;
-}
+import { signupCountryFields } from '../signups/signupCountryFields.schemas.js';
 
 export const individualSignupSchema = z
   .object({
@@ -12,7 +9,8 @@ export const individualSignupSchema = z
     lastName: z.string().min(1, 'Informe o sobrenome.'),
     email: z.string().email('E-mail inválido.'),
     whatsapp: z.string().min(8, 'Informe um WhatsApp válido.'),
-    taxId: z.string().min(1, 'Informe o CPF.'),
+    ...signupCountryFields,
+    taxId: z.string().min(1, 'Informe o documento fiscal.'),
     password: z.string().min(8, 'A senha deve ter pelo menos 8 caracteres.'),
     confirmPassword: z.string().min(8),
     ...termsAcceptanceFields,
@@ -21,9 +19,12 @@ export const individualSignupSchema = z
     message: 'As senhas não conferem.',
     path: ['confirmPassword'],
   })
-  .refine((data) => isValidCpf(data.taxId), {
-    message: 'CPF inválido.',
-    path: ['taxId'],
-  });
+  .refine(
+    (data) => isValidTaxIdForCountry(data.country, data.taxId, 'individual', data.taxIdType),
+    {
+      message: 'Documento fiscal inválido.',
+      path: ['taxId'],
+    },
+  );
 
 export type IndividualSignupInput = z.infer<typeof individualSignupSchema>;

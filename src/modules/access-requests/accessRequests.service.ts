@@ -59,10 +59,6 @@ export async function submitAccessRequest(
     );
   }
 
-  if (taxId.length !== 14) {
-    throw new ValidationError('CNPJ inválido.', 'VALIDATION_ERROR');
-  }
-
   if (tenant.status !== 'active') {
     throw new TenantNotActiveError(
       'Esta empresa ainda não está disponível para novos acessos.',
@@ -161,7 +157,7 @@ export async function submitAccessRequest(
           membershipId: membership.id,
           status: 'pending',
           personType: input.personType,
-          taxIdType: detectTaxIdType(taxId),
+          taxIdType: tenant.taxIdType ?? detectTaxIdType(taxId),
           taxIdMasked: maskTaxId(taxId),
           taxIdHash,
           tenantDisplayNameEncrypted: encryptField(tenantDisplayName),
@@ -178,7 +174,7 @@ export async function submitAccessRequest(
         where: { id: existingRequest.id },
         data: {
           personType: input.personType,
-          taxIdType: detectTaxIdType(taxId),
+          taxIdType: tenant.taxIdType ?? detectTaxIdType(taxId),
           taxIdMasked: maskTaxId(taxId),
           taxIdHash,
           tenantDisplayNameEncrypted: encryptField(tenantDisplayName),

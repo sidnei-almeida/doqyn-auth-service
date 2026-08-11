@@ -8,8 +8,23 @@ import { normalizeEmail } from '../src/utils/normalize.js';
 resetEnvCache();
 const env = loadEnv();
 
+/** Acumulador do relatório. Declarado por campo para que as leituras posteriores tipem. */
+type CryptoReport = {
+  env: {
+    dataEncryptionKeyLength: number;
+    hasPasswordPepper: boolean;
+    databaseUrlHost: string;
+  };
+  fieldEncryption: Record<string, unknown>;
+  passwordRoundtrip: Record<string, unknown>;
+  databaseUsers: Array<Record<string, unknown>>;
+  issues: string[];
+  acceptedInvites?: number;
+  hint?: string;
+};
+
 async function main() {
-  const report: Record<string, unknown> = {
+  const report: CryptoReport = {
     env: {
       dataEncryptionKeyLength: Buffer.from(env.DATA_ENCRYPTION_KEY, 'base64').length,
       hasPasswordPepper: Boolean(env.PASSWORD_PEPPER),

@@ -78,7 +78,11 @@ async function main() {
     return;
   }
 
-  const loginBody = await loginResponse.json().catch(() => ({}));
+  // O corpo pode não vir (catch devolve {}), então os campos consultados são opcionais.
+  const loginBody = (await loginResponse.json().catch(() => ({}))) as {
+    ok?: boolean;
+    code?: string;
+  };
 
   console.log(
     JSON.stringify(

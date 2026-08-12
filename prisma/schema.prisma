@@ -43,7 +43,6 @@ enum AccessGroupStatus {
 }
 
 enum TenantRole {
-  doqyn_admin
   company_admin
   individual_admin
   user

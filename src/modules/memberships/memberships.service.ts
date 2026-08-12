@@ -127,18 +127,14 @@ export async function setMembershipAccessGroups(
 }
 
 export function hasAdminRole(roles: TenantRole[]): boolean {
-  return roles.some((r) =>
-    ['doqyn_admin', 'company_admin', 'individual_admin'].includes(r),
-  );
+  return roles.some((r) => ['company_admin', 'individual_admin'].includes(r));
 }
 
-export function isDoqynAdmin(roles: TenantRole[]): boolean {
-  return roles.includes('doqyn_admin');
-}
-
-export function canGrantRole(actorRoles: TenantRole[], targetRole: TenantRole): boolean {
-  if (targetRole === 'doqyn_admin') {
-    return isDoqynAdmin(actorRoles);
-  }
+/**
+ * Não existe mais papel que escape do próprio tenant, então qualquer papel concedível é concedível
+ * por quem já é admin do tenant. O ramo especial que existia aqui protegia o papel administrativo
+ * global — eliminado do produto — e sumiu junto com ele.
+ */
+export function canGrantRole(actorRoles: TenantRole[], _targetRole: TenantRole): boolean {
   return hasAdminRole(actorRoles);
 }

@@ -184,7 +184,7 @@ async function main(): Promise<void> {
   console.log('');
   console.log('Credenciais dev (seed):');
   console.log('  sidnei@doqyn.dev');
-  console.log('    roles: doqyn_admin, company_admin, user');
+  console.log('    roles: company_admin, user');
   console.log('    grupos: (nenhum — criar manualmente se necessário)');
   console.log('  teste.juridico@doqyn.dev');
   console.log('    roles: user');

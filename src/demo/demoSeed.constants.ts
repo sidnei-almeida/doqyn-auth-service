@@ -3,7 +3,7 @@ import { DOQYN_TERMS_VERSION } from '../modules/terms/terms.constants.js';
 
 export const DEMO_SEED_SOURCE = 'dev_seed_demo' as const;
 export const DEMO_SEED_DEFAULT_PASSWORD = 'DevDoqyn@123';
-export const DEMO_GLOBAL_ADMIN_TENANT_ID = 'company_dev';
+export const DEMO_COMPANY_TENANT_ID = 'company_dev';
 
 export type DemoAccessGroupDef = {
   slug: string;
@@ -36,13 +36,18 @@ export type DemoCompanyDef = {
   pendingUsers: DemoPendingUserDef[];
 };
 
-export type DemoGlobalAdminDef = {
+/**
+ * Membro ativo de um tenant demo. Só papéis que um cliente real carrega — não existe papel de
+ * plataforma aqui, e não deve voltar a existir: um seed com conta onipotente deixa de exercitar o
+ * produto do jeito que o cliente o usa, que é a razão de o seed demo existir.
+ */
+export type DemoTenantMemberDef = {
   seedKey: string;
   email: string;
   firstName: string;
   lastName: string;
   whatsapp: string;
-  roles: Array<'doqyn_admin' | 'company_admin' | 'user'>;
+  roles: Array<'company_admin' | 'user'>;
   jobTitle?: string;
   departmentText?: string;
 };
@@ -55,17 +60,29 @@ export const DEMO_ACCESS_GROUPS: DemoAccessGroupDef[] = [
   { slug: 'diretoria', name: 'Diretoria', description: 'Diretoria executiva.' },
 ];
 
-export const DEMO_GLOBAL_ADMIN: DemoGlobalAdminDef = {
-  seedKey: 'global_admin',
-  email: 'admin.global@doqyn.dev',
+/**
+ * Administrador da empresa do tenant demo — o perfil que um cliente PJ realmente tem.
+ *
+ * Substitui a antiga conta `admin.global@doqyn.dev`, que carregava o papel administrativo de
+ * plataforma. Aquela conta enxergava tudo por privilégio global e, com isso, nunca exercitava as
+ * regras de governança que o produto vende: qualquer bug de escopo passava despercebido no demo.
+ */
+export const DEMO_COMPANY_ADMIN: DemoTenantMemberDef = {
+  seedKey: 'company_admin',
+  email: 'rafael.mendes@doqyn.dev',
   firstName: 'Rafael',
   lastName: 'Mendes',
   whatsapp: '+5551987654321',
-  roles: ['doqyn_admin', 'company_admin', 'user'],
+  roles: ['company_admin', 'user'],
+  jobTitle: 'Diretor de Operações',
+  departmentText: 'Diretoria',
 };
 
-/** Usuários ativos adicionais em company_dev — para testes de compartilhamento e permissões. */
-export const DEMO_COMPANY_DEV_ACTIVE_USERS: DemoGlobalAdminDef[] = [
+/**
+ * Funcionários comuns do mesmo tenant — é o que torna o demo parecido com um cliente de verdade:
+ * um admin e vários usuários cujo acesso depende de propriedade, grupo e regra de governança.
+ */
+export const DEMO_COMPANY_DEV_ACTIVE_USERS: DemoTenantMemberDef[] = [
   {
     seedKey: 'camila_oliveira',
     email: 'camila.oliveira@doqyn.dev',
@@ -75,6 +92,26 @@ export const DEMO_COMPANY_DEV_ACTIVE_USERS: DemoGlobalAdminDef[] = [
     roles: ['user'],
     jobTitle: 'Analista de Documentos',
     departmentText: 'Jurídico',
+  },
+  {
+    seedKey: 'thiago_barros',
+    email: 'thiago.barros@doqyn.dev',
+    firstName: 'Thiago',
+    lastName: 'Barros',
+    whatsapp: '+5551999776655',
+    roles: ['user'],
+    jobTitle: 'Analista Financeiro',
+    departmentText: 'Financeiro',
+  },
+  {
+    seedKey: 'renata_alves',
+    email: 'renata.alves@doqyn.dev',
+    firstName: 'Renata',
+    lastName: 'Alves',
+    whatsapp: '+5551999665544',
+    roles: ['user'],
+    jobTitle: 'Analista de RH',
+    departmentText: 'RH',
   },
 ];
 

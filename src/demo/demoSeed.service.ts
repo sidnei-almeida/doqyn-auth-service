@@ -17,12 +17,12 @@ import {
 import {
   DEMO_COMPANIES,
   DEMO_COMPANY_DEV_ACTIVE_USERS,
-  DEMO_GLOBAL_ADMIN,
-  DEMO_GLOBAL_ADMIN_TENANT_ID,
+  DEMO_COMPANY_ADMIN,
+  DEMO_COMPANY_TENANT_ID,
   DEMO_SEED_DEFAULT_PASSWORD,
   DEMO_SEED_SOURCE,
   type DemoCompanyDef,
-  type DemoGlobalAdminDef,
+  type DemoTenantMemberDef,
   type DemoPendingUserDef,
 } from './demoSeed.constants.js';
 import { assertDemoSeedSafe } from './demoSeed.guard.js';
@@ -331,16 +331,16 @@ async function ensurePendingAccessRequest(input: {
   };
 }
 
-async function ensureGlobalAdminTenant() {
+async function ensureDemoCompanyTenant() {
   return prisma.authTenant.upsert({
-    where: { tenantId: DEMO_GLOBAL_ADMIN_TENANT_ID },
+    where: { tenantId: DEMO_COMPANY_TENANT_ID },
     create: {
-      tenantId: DEMO_GLOBAL_ADMIN_TENANT_ID,
+      tenantId: DEMO_COMPANY_TENANT_ID,
       tenantType: 'business',
       country: 'BR',
       displayNameEncrypted: encryptField('DOQYN Dev'),
       displayNameLookupHash: hashLookup('doqyn dev'),
-      slug: DEMO_GLOBAL_ADMIN_TENANT_ID,
+      slug: DEMO_COMPANY_TENANT_ID,
       status: 'active',
     },
     update: {
@@ -354,7 +354,7 @@ async function ensureGlobalAdminTenant() {
 }
 
 async function ensureActiveTenantMember(
-  member: DemoGlobalAdminDef,
+  member: DemoTenantMemberDef,
   tenantUuid: string,
   passwordHash: string,
 ): Promise<DemoSeedManifestGlobalAdmin> {
@@ -442,7 +442,7 @@ async function ensureActiveTenantMember(
     userId: user.id,
     email: member.email,
     displayName,
-    tenantId: DEMO_GLOBAL_ADMIN_TENANT_ID,
+    tenantId: DEMO_COMPANY_TENANT_ID,
     membershipId: membership.id,
     roles: uniqueRoles,
     status: 'active',
@@ -451,8 +451,8 @@ async function ensureActiveTenantMember(
   };
 }
 
-async function ensureGlobalAdmin(
-  admin: DemoGlobalAdminDef,
+async function ensureCompanyAdmin(
+  admin: DemoTenantMemberDef,
   tenantUuid: string,
   passwordHash: string,
 ) {
@@ -468,8 +468,10 @@ export async function runDemoSeed(options: RunDemoSeedOptions = {}): Promise<Run
   const passwordHash = await hashPassword(password);
   const manifestPath = options.manifestPath ?? defaultManifestPath(repoRoot);
 
-  const adminTenant = await ensureGlobalAdminTenant();
-  const globalAdmin = await ensureGlobalAdmin(DEMO_GLOBAL_ADMIN, adminTenant.id, passwordHash);
+  const adminTenant = await ensureDemoCompanyTenant();
+  // A chave `globalAdmin` do manifest permanece: é contrato cross-repo lido pelo seed do Alpha
+  // (`scripts/demo-seed/`). O que mudou é a conta por trás dela — hoje um admin de empresa comum.
+  const globalAdmin = await ensureCompanyAdmin(DEMO_COMPANY_ADMIN, adminTenant.id, passwordHash);
 
   const companyDevActiveUsers: DemoSeedManifestGlobalAdmin[] = [];
   for (const member of DEMO_COMPANY_DEV_ACTIVE_USERS) {

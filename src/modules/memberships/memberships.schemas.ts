@@ -6,7 +6,7 @@ export const publicMembershipSchema = z.object({
   tenantType: z.enum(['individual', 'business']),
   tenantDisplayName: z.string().nullable(),
   status: z.enum(['pending', 'active', 'blocked', 'rejected', 'removed']),
-  roles: z.array(z.enum(['doqyn_admin', 'company_admin', 'individual_admin', 'user'])),
+  roles: z.array(z.enum(['company_admin', 'individual_admin', 'user'])),
   accessGroupIds: z.array(z.string()),
 });
 

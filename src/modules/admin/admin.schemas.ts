@@ -12,7 +12,7 @@ export const notificationPreferencesSchema = z.object({
 });
 
 export const approveMembershipSchema = z.object({
-  roles: z.array(z.enum(['doqyn_admin', 'company_admin', 'individual_admin', 'user'])).min(1),
+  roles: z.array(z.enum(['company_admin', 'individual_admin', 'user'])).min(1),
   accessGroupIds: z.array(z.string()).default([]),
   notificationPreferences: notificationPreferencesSchema.optional(),
 });
@@ -35,7 +35,7 @@ export const blockMembershipSchema = z.object({
 });
 
 export const updateMemberRolesSchema = z.object({
-  roles: z.array(z.enum(['doqyn_admin', 'company_admin', 'individual_admin', 'user'])).min(1),
+  roles: z.array(z.enum(['company_admin', 'individual_admin', 'user'])).min(1),
 });
 
 export const updateMemberAccessGroupsSchema = z.object({
@@ -62,7 +62,7 @@ export const paginationQuerySchema = z.object({
 export const adminListQuerySchema = z.object({
   tenantId: z.string().optional(),
   status: z.enum(['pending', 'active', 'blocked', 'rejected', 'removed']).optional(),
-  role: z.enum(['doqyn_admin', 'company_admin', 'individual_admin', 'user']).optional(),
+  role: z.enum(['company_admin', 'individual_admin', 'user']).optional(),
   accessGroupId: z.string().optional(),
   search: z.string().optional(),
   page: z.coerce.number().int().min(1).optional(),

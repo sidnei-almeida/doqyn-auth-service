@@ -2,7 +2,7 @@ import { prisma } from '../../db/prisma.js';
 import { encryptField, hashLookup } from '../../security/crypto.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { auditCtx, logAuthAudit } from '../audit/authAudit.service.js';
-import { assertDoqynAdmin } from '../admin/adminAuthorization.js';
+import { assertPlatformOperation } from '../admin/adminAuthorization.js';
 import type { AdminActor } from '../admin/admin.types.js';
 import { revokeAllUserSessions } from '../sessions/sessionsRevoke.service.js';
 import { findUserById, toPublicUser } from '../users/users.service.js';
@@ -39,7 +39,7 @@ export async function deactivateUser(
   userId: string,
   ctx?: { ipHash?: string; userAgentHash?: string },
 ): Promise<PublicUser> {
-  assertDoqynAdmin(actor);
+  assertPlatformOperation(actor);
   if (userId === actor.userId) {
     throw new ForbiddenError('Não é permitido desativar a si mesmo.');
   }
@@ -71,7 +71,7 @@ export async function anonymizeUser(
   userId: string,
   ctx?: { ipHash?: string; userAgentHash?: string },
 ): Promise<PublicUser> {
-  assertDoqynAdmin(actor);
+  assertPlatformOperation(actor);
   if (userId === actor.userId) {
     throw new ForbiddenError('Não é permitido anonimizar a si mesmo.');
   }
@@ -115,7 +115,7 @@ export async function revokeUserSessionsAdmin(
   userId: string,
   ctx?: { ipHash?: string; userAgentHash?: string },
 ): Promise<{ revokedCount: number }> {
-  assertDoqynAdmin(actor);
+  assertPlatformOperation(actor);
 
   const user = await findUserById(userId);
   if (!user) throw new NotFoundError('Usuário não encontrado.');

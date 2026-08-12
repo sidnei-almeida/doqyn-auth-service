@@ -16,7 +16,9 @@ async function main() {
   console.log('Demo seed concluído:');
   console.log(`  Empresas: ${result.manifest.companies.length}`);
   console.log(`  Pendências de acesso: ${pendingCount}`);
-  console.log(`  Admin global: ${result.manifest.globalAdmin.email} (${result.manifest.globalAdmin.tenantId})`);
+  console.log(
+    `  Admin da empresa: ${result.manifest.globalAdmin.email} (${result.manifest.globalAdmin.tenantId})`,
+  );
   if (result.manifest.companyDevActiveUsers.length > 0) {
     console.log(
       `  Usuários ativos company_dev: ${result.manifest.companyDevActiveUsers.map((u) => u.email).join(', ')}`,

@@ -97,7 +97,7 @@ function buildReportMarkdown(input: DemoSeedReportInput): string {
       `  - Papéis: ${user.roles.join(', ')}`,
       '',
     ]),
-    '## Admin global',
+    '## Admin da empresa demo',
     '',
     `- E-mail: \`${input.manifest.globalAdmin.email}\``,
     `- Nome: ${input.manifest.globalAdmin.displayName}`,

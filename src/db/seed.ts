@@ -20,7 +20,7 @@ const SIDNEI_DEV_USER: DevUserSeed = {
   firstName: 'Sidnei',
   lastName: 'Dev',
   whatsapp: '+5554999999999',
-  roles: ['doqyn_admin', 'company_admin', 'user'],
+  roles: ['company_admin', 'user'],
 };
 
 const TEST_JURIDICO_USER: DevUserSeed = {
@@ -36,7 +36,7 @@ const TEST_JURIDICO_USER: DevUserSeed = {
  *
  * Cria/atualiza de forma idempotente:
  * - tenant company_dev (business, active) — sem grupos de acesso padrão
- * - sidnei@doqyn.dev — admin total dev (doqyn_admin + company_admin + user)
+ * - sidnei@doqyn.dev — admin da empresa dev (company_admin + user)
  * - teste.juridico@doqyn.dev — usuário comum para testes de gestão (user)
  *
  * Grupos de acesso devem ser criados manualmente por tenant quando necessário.

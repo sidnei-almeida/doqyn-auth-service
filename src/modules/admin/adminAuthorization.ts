@@ -9,7 +9,6 @@ import {
   canGrantRole,
   findMembershipById,
   hasAdminRole,
-  isDoqynAdmin,
 } from '../memberships/memberships.service.js';
 import type { AdminActor } from './admin.types.js';
 
@@ -19,18 +18,25 @@ export function assertAdminActor(actor: AdminActor): void {
   }
 }
 
-export function assertDoqynAdmin(actor: AdminActor): void {
-  assertAdminActor(actor);
-  if (!isDoqynAdmin(actor.membership.roles as TenantRole[])) {
-    throw new ForbiddenError('Apenas doqyn_admin pode executar esta operação.');
-  }
+/**
+ * Operação de plataforma (ciclo de vida de tenant, anonimização LGPD, revogação de sessão):
+ * indisponível por sessão humana. Negação incondicional, de propósito.
+ *
+ * O que liberava estas operações era o papel administrativo global, eliminado do produto. Nenhum
+ * login humano volta a ter poder sobre dado de cliente de outro tenant — a fase 2 as recria sob
+ * chave interna auditada. Até lá a resposta é 403 explícito, não um caminho silencioso.
+ */
+export function assertPlatformOperation(_actor: AdminActor): void {
+  throw new ForbiddenError(
+    'Operação de plataforma indisponível: exige chave interna auditada, não sessão de usuário.',
+  );
 }
 
+/**
+ * O escopo é sempre o tenant da própria sessão. Pedir outro tenant é violação, não privilégio.
+ */
 export function resolveTenantScope(actor: AdminActor, requestedTenantId?: string): string {
   assertAdminActor(actor);
-  if (isDoqynAdmin(actor.membership.roles as TenantRole[])) {
-    return requestedTenantId ?? actor.membership.tenantId;
-  }
   if (requestedTenantId && requestedTenantId !== actor.membership.tenantId) {
     throw new TenantScopeViolationError();
   }
@@ -45,10 +51,8 @@ export async function assertCanManageMembership(
   if (!membership) {
     throw new ForbiddenError();
   }
-  if (!isDoqynAdmin(actor.membership.roles as TenantRole[])) {
-    if (actor.membership.tenantId !== membership.tenant.tenantId) {
-      throw new TenantScopeViolationError();
-    }
+  if (actor.membership.tenantId !== membership.tenant.tenantId) {
+    throw new TenantScopeViolationError();
   }
   return membership;
 }
@@ -66,7 +70,6 @@ export function assertNotSelfSensitive(
   targetMembershipId: string,
   targetUserId: string,
 ): void {
-  if (isDoqynAdmin(actor.membership.roles as TenantRole[])) return;
   if (
     targetMembershipId === actor.membership.membershipId ||
     targetUserId === actor.userId

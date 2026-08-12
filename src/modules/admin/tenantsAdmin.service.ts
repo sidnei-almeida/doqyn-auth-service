@@ -15,7 +15,7 @@ import {
   type PublicTenant,
 } from '../tenants/tenants.service.js';
 import {
-  assertDoqynAdmin,
+  assertPlatformOperation,
   assertLastAdminProtection,
 } from './adminAuthorization.js';
 import type { AdminActor } from './admin.types.js';
@@ -47,7 +47,7 @@ export async function listTenants(
   actor: AdminActor,
   filters: ListTenantsFilters = {},
 ): Promise<PaginatedResult<PublicTenant>> {
-  assertDoqynAdmin(actor);
+  assertPlatformOperation(actor);
 
   const page = Math.max(1, filters.page ?? 1);
   const limit = Math.min(100, Math.max(1, filters.limit ?? 20));
@@ -87,7 +87,7 @@ export async function listTenants(
 }
 
 export async function getTenant(actor: AdminActor, tenantTextId: string): Promise<PublicTenant> {
-  assertDoqynAdmin(actor);
+  assertPlatformOperation(actor);
   const tenant = await findTenantByTextId(tenantTextId);
   if (!tenant) throw new NotFoundError('Tenant não encontrado.');
   return toPublicTenant(tenant);
@@ -98,7 +98,7 @@ export async function createTenantAdmin(
   input: CreateTenantAdminInput,
   ctx?: { ipHash?: string; userAgentHash?: string },
 ): Promise<PublicTenant> {
-  assertDoqynAdmin(actor);
+  assertPlatformOperation(actor);
 
   const existing = await findTenantByTextId(input.tenantId);
   if (existing) {
@@ -133,7 +133,7 @@ export async function updateTenantAdmin(
   input: UpdateTenantAdminInput,
   ctx?: { ipHash?: string; userAgentHash?: string },
 ): Promise<PublicTenant> {
-  assertDoqynAdmin(actor);
+  assertPlatformOperation(actor);
   const tenant = await findTenantByTextId(tenantTextId);
   if (!tenant) throw new NotFoundError('Tenant não encontrado.');
 
@@ -179,7 +179,7 @@ export async function blockTenant(
   tenantTextId: string,
   ctx?: { ipHash?: string; userAgentHash?: string },
 ): Promise<PublicTenant> {
-  assertDoqynAdmin(actor);
+  assertPlatformOperation(actor);
   const tenant = await findTenantByTextId(tenantTextId);
   if (!tenant) throw new NotFoundError('Tenant não encontrado.');
 
@@ -213,7 +213,7 @@ export async function unblockTenant(
   tenantTextId: string,
   ctx?: { ipHash?: string; userAgentHash?: string },
 ): Promise<PublicTenant> {
-  assertDoqynAdmin(actor);
+  assertPlatformOperation(actor);
   const tenant = await findTenantByTextId(tenantTextId);
   if (!tenant) throw new NotFoundError('Tenant não encontrado.');
 
@@ -245,7 +245,7 @@ export async function transferAdmin(
   toMembershipId: string,
   ctx?: { ipHash?: string; userAgentHash?: string },
 ): Promise<{ from: string; to: string }> {
-  assertDoqynAdmin(actor);
+  assertPlatformOperation(actor);
   const tenant = await findTenantByTextId(tenantTextId);
   if (!tenant) throw new NotFoundError('Tenant não encontrado.');
 

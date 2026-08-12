@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import {
   DEMO_COMPANIES,
   DEMO_COMPANY_DEV_ACTIVE_USERS,
-  DEMO_GLOBAL_ADMIN,
+  DEMO_COMPANY_ADMIN,
   DEMO_SEED_DEFAULT_PASSWORD,
   DEMO_SEED_SOURCE,
 } from '../src/demo/demoSeed.constants.js';
@@ -43,14 +43,24 @@ describe('demo seed', () => {
     }
   });
 
-  it('define admin global e usuários ativos em company_dev', () => {
-    expect(DEMO_GLOBAL_ADMIN.roles).toContain('doqyn_admin');
-    expect(DEMO_GLOBAL_ADMIN.email).toBe('admin.global@doqyn.dev');
-    expect(DEMO_COMPANY_DEV_ACTIVE_USERS).toHaveLength(1);
-    expect(DEMO_COMPANY_DEV_ACTIVE_USERS[0]?.email).toBe('camila.oliveira@doqyn.dev');
-    expect(DEMO_COMPANY_DEV_ACTIVE_USERS[0]?.roles).toEqual(['user']);
-    expect(DEMO_COMPANY_DEV_ACTIVE_USERS[0]?.roles).not.toContain('company_admin');
-    expect(DEMO_COMPANY_DEV_ACTIVE_USERS[0]?.roles).not.toContain('doqyn_admin');
+  it('company_dev parece um cliente real: um admin de empresa e funcionários comuns', () => {
+    expect(DEMO_COMPANY_ADMIN.email).toBe('rafael.mendes@doqyn.dev');
+    expect(DEMO_COMPANY_ADMIN.roles).toEqual(['company_admin', 'user']);
+
+    expect(DEMO_COMPANY_DEV_ACTIVE_USERS.length).toBeGreaterThanOrEqual(2);
+    for (const member of DEMO_COMPANY_DEV_ACTIVE_USERS) {
+      expect(member.roles).toEqual(['user']);
+      expect(member.jobTitle?.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('nenhuma conta demo carrega papel de plataforma', () => {
+    // O seed demo existe para exercitar o produto como o cliente o usa. Uma conta onipotente vê
+    // tudo por privilégio e nunca passa pelas regras de governança — bug de escopo passaria batido.
+    const everyRole = [DEMO_COMPANY_ADMIN, ...DEMO_COMPANY_DEV_ACTIVE_USERS].flatMap(
+      (member) => member.roles as string[],
+    );
+    expect([...new Set(everyRole)].sort()).toEqual(['company_admin', 'user']);
   });
 
   it('bloqueia demo seed em produção', () => {

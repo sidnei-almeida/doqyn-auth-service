@@ -91,25 +91,34 @@ describe('admin expansion', () => {
     expect(body.member.membership.status).toBe('active');
   });
 
-  it('protege último admin ao remover role', async () => {
+  /**
+   * Este teste afirmava LAST_ADMIN_PROTECTION (409) usando um ator de OUTRO tenant, o que só era
+   * possível pelo papel administrativo global — eliminado do produto. Sem ele, a requisição para
+   * de ser "protegida" e passa a ser barrada antes, por escopo de tenant.
+   *
+   * Consequência registrada no SUMMARY: por HTTP, LAST_ADMIN_PROTECTION ficou inalcançável.
+   * `assertNotSelfSensitive` roda antes de `assertLastAdminProtection`, e o único ator autorizado
+   * a rebaixar o admin solitário de um tenant é ele mesmo. Cobrir o 409 de novo exige decisão de
+   * produto sobre quem pode fazê-lo, que é fase 2.
+   */
+  it('rebaixar admin de outro tenant é violação de escopo, não proteção de último admin', async () => {
     const { membership: targetMembership } = await setupAdminUser(
       'only.admin@empresa.com',
       'senha-segura-123',
       'tenant_lastadmin',
     );
-    const { membership: doqynMembership } = await setupAdminUser(
-      'doqyn.lastadmin@empresa.com',
+    const { membership: outroTenantAdmin } = await setupAdminUser(
+      'admin.outro@empresa.com',
       'senha-segura-123',
-      'tenant_doqyn_lastadmin',
-      ['doqyn_admin'],
+      'tenant_outro_lastadmin',
     );
 
-    const { token } = await loginUser(app, 'doqyn.lastadmin@empresa.com', 'senha-segura-123', cookieName);
+    const { token } = await loginUser(app, 'admin.outro@empresa.com', 'senha-segura-123', cookieName);
     await app.inject({
       method: 'POST',
       url: '/auth/select-tenant',
       headers: { cookie: `${cookieName}=${token}` },
-      payload: { membershipId: doqynMembership.id },
+      payload: { membershipId: outroTenantAdmin.id },
     });
 
     const response = await app.inject({
@@ -119,7 +128,8 @@ describe('admin expansion', () => {
       payload: { roles: ['user'] },
     });
 
-    expect(response.statusCode).toBe(409);
+    expect(response.statusCode).toBe(403);
+    expect((response.json() as { code?: string }).code).toBe('TENANT_SCOPE_VIOLATION');
   });
 
   it('remove membro e revoga sessões', async () => {
@@ -176,16 +186,17 @@ describe('admin expansion', () => {
     expect(sessionBody.activeMembership ?? null).toBeNull();
   });
 
-  it('doqyn_admin lista tenants', async () => {
+  // Listar tenants é operação de plataforma. Não existe mais sessão humana que a execute: a fase 2
+  // a recria sob chave interna auditada. Até lá, negação explícita para qualquer ator.
+  it('ninguém lista tenants por sessão — operação de plataforma nega sempre', async () => {
     const { membership: adminMembership } = await setupAdminUser(
-      'doqyn.tenants@empresa.com',
+      'admin.tenants@empresa.com',
       'senha-segura-123',
-      'tenant_doqyn',
-      ['doqyn_admin'],
+      'tenant_lista',
     );
     await createTestTenant('tenant_extra');
 
-    const { token } = await loginUser(app, 'doqyn.tenants@empresa.com', 'senha-segura-123', cookieName);
+    const { token } = await loginUser(app, 'admin.tenants@empresa.com', 'senha-segura-123', cookieName);
     await app.inject({
       method: 'POST',
       url: '/auth/select-tenant',
@@ -199,9 +210,7 @@ describe('admin expansion', () => {
       headers: { cookie: `${cookieName}=${token}` },
     });
 
-    expect(response.statusCode).toBe(200);
-    const body = response.json() as { items: unknown[]; total: number };
-    expect(body.total).toBeGreaterThanOrEqual(2);
+    expect(response.statusCode).toBe(403);
   });
 
   it('company_admin não lista tenants', async () => {
@@ -271,16 +280,17 @@ describe('admin expansion', () => {
     expect(count).toBe(1);
   });
 
-  it('doqyn_admin desativa usuário', async () => {
+  // Desativar usuário é operação de plataforma (mesma família de anonimização LGPD e revogação de
+  // sessão). Sai do modelo de sessão nesta fase e volta na fase 2 por chave interna auditada.
+  it('desativar usuário é operação de plataforma — nega por sessão', async () => {
     const { membership: adminMembership, user: adminUser } = await setupAdminUser(
-      'doqyn.deact@empresa.com',
+      'admin.deact@empresa.com',
       'senha-segura-123',
       'tenant_deact',
-      ['doqyn_admin'],
     );
     const target = await createTestUser('deact.target@empresa.com', 'senha-segura-123');
 
-    const { token } = await loginUser(app, 'doqyn.deact@empresa.com', 'senha-segura-123', cookieName);
+    const { token } = await loginUser(app, 'admin.deact@empresa.com', 'senha-segura-123', cookieName);
     await app.inject({
       method: 'POST',
       url: '/auth/select-tenant',
@@ -294,8 +304,7 @@ describe('admin expansion', () => {
       headers: { cookie: `${cookieName}=${token}` },
     });
 
-    expect(response.statusCode).toBe(200);
-    expect((response.json() as { user: { status: string } }).user.status).toBe('disabled');
+    expect(response.statusCode).toBe(403);
     expect(adminUser.id).not.toBe(target.id);
   });
 

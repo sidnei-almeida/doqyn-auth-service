@@ -11,7 +11,6 @@ import {
   type PublicAccessGroup,
 } from '../access-groups/accessGroups.service.js';
 import { auditCtx, logAuthAudit } from '../audit/authAudit.service.js';
-import { isDoqynAdmin } from '../memberships/memberships.service.js';
 import {
   assertAdminActor,
   resolveTenantScope,
@@ -180,6 +179,7 @@ export async function adminRemoveGroupMember(
   );
 }
 
-export function canManageAnyTenant(actor: AdminActor): boolean {
-  return isDoqynAdmin(actor.membership.roles as TenantRole[]);
+/** Nenhuma sessão humana governa mais de um tenant. Operação cross-tenant é da fase 2. */
+export function canManageAnyTenant(_actor: AdminActor): boolean {
+  return false;
 }

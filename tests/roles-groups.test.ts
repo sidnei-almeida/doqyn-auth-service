@@ -35,9 +35,12 @@ describe('roles', () => {
     expect(count).toBe(1);
   });
 
-  it('company_admin não concede doqyn_admin', () => {
-    expect(canGrantRole(['company_admin'], 'doqyn_admin')).toBe(false);
-    expect(canGrantRole(['doqyn_admin'], 'doqyn_admin')).toBe(true);
+  it('admin do tenant concede os papéis do tenant', () => {
+    // O papel administrativo de plataforma não existe mais, então não há papel privilegiado que
+    // um admin de empresa esteja proibido de conceder — o que restringe é o escopo do tenant.
+    expect(canGrantRole(['company_admin'], 'company_admin')).toBe(true);
+    expect(canGrantRole(['company_admin'], 'user')).toBe(true);
+    expect(canGrantRole(['individual_admin'], 'user')).toBe(true);
   });
 
   it('user não aprova ninguém', () => {

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { termsAcceptanceFields } from '../terms/termsAcceptance.schemas.js';
 
-const tenantRoleSchema = z.enum(['doqyn_admin', 'company_admin', 'individual_admin', 'user']);
+const tenantRoleSchema = z.enum(['company_admin', 'individual_admin', 'user']);
 
 export const createInviteSchema = z.object({
   email: z.string().email(),

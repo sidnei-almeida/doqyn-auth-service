@@ -18,7 +18,6 @@ import {
 import type { PublicMembership, MemberDetailResponse } from '../memberships/memberships.schemas.js';
 import {
   findMembershipById,
-  isDoqynAdmin,
   setMembershipAccessGroups,
   setMembershipRoles,
   toPublicMembership,
@@ -100,10 +99,10 @@ export async function listMembers(
   const page = Math.max(1, filters.page ?? 1);
   const limit = Math.min(100, Math.max(1, filters.limit ?? 20));
 
-  const isGlobalAdmin = isDoqynAdmin(actor.membership.roles as TenantRole[]);
+  // Sem papel global, listar membros é sempre dentro do tenant da sessão.
   let tenantUuid: string | undefined;
 
-  if (filters.tenantId || !isGlobalAdmin) {
+  {
     const tenantTextId = resolveTenantScope(actor, filters.tenantId);
     const tenant = await prisma.authTenant.findUnique({ where: { tenantId: tenantTextId } });
     if (!tenant) {
@@ -329,16 +328,8 @@ export async function approveMembership(
 
   await assertCanManageMembership(actor, targetMembershipId);
   assertCanGrantRoles(actor, input.roles as TenantRole[]);
-  if (
-    targetMembershipId === actor.membership.membershipId &&
-    !isDoqynAdmin(actor.membership.roles as TenantRole[])
-  ) {
-    throw new ForbiddenError('Não é permitido aprovar a si mesmo.');
-  }
-  if (
-    target.userId === actor.userId &&
-    !isDoqynAdmin(actor.membership.roles as TenantRole[])
-  ) {
+  // A exceção para o papel global sumiu com ele: ninguém aprova a própria solicitação.
+  if (targetMembershipId === actor.membership.membershipId || target.userId === actor.userId) {
     throw new ForbiddenError('Não é permitido aprovar a si mesmo.');
   }
 
@@ -541,12 +532,8 @@ export async function listAccessRequestsForAdmin(
   tenantTextId?: string,
   status?: string,
 ) {
-  const isGlobalAdmin = isDoqynAdmin(actor.membership.roles as TenantRole[]);
-  let tenantFilter: string | undefined;
-
-  if (tenantTextId || !isGlobalAdmin) {
-    tenantFilter = resolveTenantScope(actor, tenantTextId);
-  }
+  // Idem: solicitações de acesso são sempre as do tenant da sessão.
+  const tenantFilter: string = resolveTenantScope(actor, tenantTextId);
 
   const requests = await prisma.authAccessRequest.findMany({
     where: {

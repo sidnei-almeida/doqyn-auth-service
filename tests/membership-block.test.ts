@@ -263,20 +263,24 @@ describe('membership block/unblock', () => {
     expect(response.statusCode).toBe(403);
   });
 
-  it('bloqueio do último admin retorna LAST_ADMIN_PROTECTION', async () => {
-    const { membership: doqynMembership } = await setupAdminUser(
-      'doqyn.block@empresa.com',
+  /**
+   * O 409 LAST_ADMIN_PROTECTION só era alcançável aqui porque o ator vinha de outro tenant, pelo
+   * papel administrativo global. Sem esse papel a requisição morre antes, em escopo de tenant —
+   * ver a nota equivalente em `admin-expansion.test.ts` e o SUMMARY de 01-03.
+   */
+  it('bloquear admin de outro tenant é violação de escopo', async () => {
+    const { membership: outroTenantAdmin } = await setupAdminUser(
+      'admin.block@empresa.com',
       'senha-segura-123',
-      'tenant_doqyn_admin_home',
-      ['doqyn_admin'],
+      'tenant_admin_home',
     );
     const tenant = await createTestTenant('tenant_solo_admin');
     const soloAdminUser = await createTestUser('solo@empresa.com', 'senha-segura-123');
     const target = await createTestMembership(soloAdminUser.id, tenant.id, 'active');
     await assignRoles(target.id, ['company_admin']);
 
-    const { token } = await loginUser(app, 'doqyn.block@empresa.com', 'senha-segura-123', cookieName);
-    await selectTenant(app, token, doqynMembership.id);
+    const { token } = await loginUser(app, 'admin.block@empresa.com', 'senha-segura-123', cookieName);
+    await selectTenant(app, token, outroTenantAdmin.id);
 
     const response = await app.inject({
       method: 'POST',
@@ -285,8 +289,8 @@ describe('membership block/unblock', () => {
       payload: {},
     });
 
-    expect(response.statusCode).toBe(409);
-    expect((response.json() as { code?: string }).code).toBe('LAST_ADMIN_PROTECTION');
+    expect(response.statusCode).toBe(403);
+    expect((response.json() as { code?: string }).code).toBe('TENANT_SCOPE_VIOLATION');
   });
 
   it('block idempotente quando já está blocked', async () => {

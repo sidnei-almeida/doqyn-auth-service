@@ -79,12 +79,14 @@ describe('admin', () => {
     expect(response.statusCode).toBe(403);
   });
 
-  it('doqyn_admin aprova qualquer tenant', async () => {
+  // Antes este teste afirmava que o papel administrativo global aprovava membro de QUALQUER
+  // tenant. O papel foi eliminado: hoje a mesma requisição é violação de escopo, e é isso que o
+  // teste passa a provar.
+  it('admin de empresa não aprova membro de outro tenant', async () => {
     const { membership: adminMembership } = await setupAdminUser(
-      'doqyn.admin@empresa.com',
+      'admin.escopo@empresa.com',
       'senha-segura-123',
       'tenant_d',
-      ['doqyn_admin'],
     );
     await setupAccessGroups('tenant_d');
 
@@ -93,7 +95,7 @@ describe('admin', () => {
     const user = await createTestUser('any@empresa.com', 'senha-segura-123');
     const target = await createTestMembership(user.id, otherTenant.id, 'pending');
 
-    const { token } = await loginUser(app, 'doqyn.admin@empresa.com', 'senha-segura-123', cookieName);
+    const { token } = await loginUser(app, 'admin.escopo@empresa.com', 'senha-segura-123', cookieName);
 
     await app.inject({
       method: 'POST',
@@ -109,7 +111,8 @@ describe('admin', () => {
       payload: { roles: ['user'], accessGroupIds: ['group_financeiro'] },
     });
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).toBe(403);
+    expect((response.json() as { code?: string }).code).toBe('TENANT_SCOPE_VIOLATION');
   });
 
   it('company_admin rejeita usuário pendente com motivo persistido', async () => {

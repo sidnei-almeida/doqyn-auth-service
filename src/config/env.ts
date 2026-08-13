@@ -1,5 +1,32 @@
 import { z } from 'zod';
 
+/**
+ * Chave AES de 256 bits em base64 — exatamente 32 bytes, validada no boot.
+ *
+ * Antes isto era `min(1)` no schema e a checagem de 32 bytes só acontecia na primeira operação de
+ * cifra, ou seja, o serviço subia inteiro com chave inválida e quebrava no primeiro cadastro.
+ * Falhar no boot é o comportamento correto: o operador descobre no deploy, não o usuário.
+ */
+const base256BitKey = (name: string) =>
+  z.string().refine(
+    (v) => {
+      try {
+        return Buffer.from(v, 'base64').length === 32;
+      } catch {
+        return false;
+      }
+    },
+    { message: `${name} deve ser uma chave de 32 bytes (256 bits) em base64` },
+  );
+
+/**
+ * Segredo de HMAC. O comprimento importa: `LOOKUP_HASH_SECRET` protege hash de e-mail, que é dado
+ * de baixa entropia — com segredo curto, quem obtiver o banco enumera os e-mails por força bruta.
+ * Antes todos eram `min(1)`, então um segredo de um caractere passava.
+ */
+const hmacSecret = (name: string) =>
+  z.string().min(32, `${name} deve ter pelo menos 32 caracteres`);
+
 const envSchema = z.object({
   PORT: z.coerce.number().default(4100),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -18,10 +45,18 @@ const envSchema = z.object({
   DOQYN_APP_BASE_URL: z.string().default('http://127.0.0.1:3001'),
   // Sem default fraco — em production exige chave explícita e forte.
   DOQYN_APP_INTERNAL_API_KEY: z.string().min(1).optional().default(''),
-  DATA_ENCRYPTION_KEY: z.string().min(1),
-  LOOKUP_HASH_SECRET: z.string().min(1),
-  SESSION_TOKEN_HASH_SECRET: z.string().min(1),
-  PASSWORD_RESET_TOKEN_HASH_SECRET: z.string().min(1),
+  DATA_ENCRYPTION_KEY: base256BitKey('DATA_ENCRYPTION_KEY'),
+  // Chave anterior, usada só para DECIFRAR durante a rotação. Ver src/security/crypto.ts.
+  DATA_ENCRYPTION_KEY_PREVIOUS: z
+    .string()
+    .optional()
+    .default('')
+    .refine((v) => v === '' || Buffer.from(v, 'base64').length === 32, {
+      message: 'DATA_ENCRYPTION_KEY_PREVIOUS, quando definida, deve ter 32 bytes em base64',
+    }),
+  LOOKUP_HASH_SECRET: hmacSecret('LOOKUP_HASH_SECRET'),
+  SESSION_TOKEN_HASH_SECRET: hmacSecret('SESSION_TOKEN_HASH_SECRET'),
+  PASSWORD_RESET_TOKEN_HASH_SECRET: hmacSecret('PASSWORD_RESET_TOKEN_HASH_SECRET'),
   PASSWORD_PEPPER: z.string().optional().default(''),
   PASSWORD_RESET_TTL_MINUTES: z.coerce.number().default(30),
   EMAIL_VERIFICATION_TTL_HOURS: z.coerce.number().default(24),

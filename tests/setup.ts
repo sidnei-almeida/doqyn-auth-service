@@ -50,7 +50,39 @@ export const TEST_ENV = {
   OAUTH_ERROR_REDIRECT_URL: 'http://localhost:5173/login',
 };
 
+/**
+ * Recusa rodar contra um banco que não seja de teste.
+ *
+ * O `beforeEach` abaixo apaga todas as tabelas, e descobrir o destino pela env não funciona: o
+ * Prisma Client carrega o `.env` por conta própria e resolve `DATABASE_URL` no momento em que é
+ * instanciado — na importação deste módulo, portanto antes do `Object.assign(process.env, TEST_ENV)`
+ * abaixo. O resultado era `TEST_ENV` anunciar `doqyn_auth_test` enquanto a conexão real apontava
+ * para o banco de desenvolvimento, e `npx vitest run` zerava o ambiente inteiro sem aviso.
+ *
+ * Por isso a pergunta é feita à conexão, não à configuração: `current_database()` é a única fonte
+ * que não mente sobre onde os `deleteMany` vão cair.
+ */
+async function assertTestDatabase(): Promise<void> {
+  const [row] = await prisma.$queryRawUnsafe<Array<{ current_database: string }>>(
+    'SELECT current_database()',
+  );
+  const databaseName = row?.current_database ?? '(desconhecido)';
+
+  if (/test/i.test(databaseName)) return;
+
+  throw new Error(
+    [
+      `Recusando rodar os testes contra o banco "${databaseName}": a suíte apaga todas as tabelas.`,
+      'O Prisma usa DATABASE_URL do .env, não TEST_DATABASE_URL — apontar só a segunda não protege.',
+      'Crie um banco descartável com "test" no nome e rode com DATABASE_URL apontada para ele:',
+      '  DATABASE_URL=postgresql://.../doqyn_auth_test npx prisma migrate deploy',
+      '  DATABASE_URL=postgresql://.../doqyn_auth_test npx vitest run',
+    ].join('\n'),
+  );
+}
+
 beforeAll(async () => {
+  await assertTestDatabase();
   Object.assign(process.env, TEST_ENV);
   resetEnvCache();
   await prisma.$executeRawUnsafe(

@@ -45,6 +45,9 @@ export function buildMicrosoftAuthorizeUrl(input: {
     nonce: input.nonce,
     code_challenge: input.codeChallenge,
     code_challenge_method: 'S256',
+    // Mesmo comportamento do botão do Google ao lado: quem tem conta pessoal e corporativa no
+    // mesmo navegador escolhe qual usar, em vez de entrar direto com a sessão ativa.
+    prompt: 'select_account',
   });
   return `https://login.microsoftonline.com/${config.tenant}/oauth2/v2.0/authorize?${params.toString()}`;
 }
@@ -114,22 +117,66 @@ function microsoftJwks(tenant: string) {
   );
 }
 
+const looksLikeEmail = (value: unknown): value is string =>
+  typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+
+/**
+ * Extrai o e-mail do id_token.
+ *
+ * `preferred_username` só é aceito quando de fato parece um e-mail. No Google ele sempre é; no
+ * Microsoft Entra ele é o UPN, que frequentemente NÃO é o e-mail do usuário — pode ser
+ * `fulano@empresa.onmicrosoft.com`, um alias interno ou um login sem domínio roteável. Gravar isso
+ * como e-mail da conta produz identidade errada e pode colidir com o e-mail de outra pessoa.
+ */
+function extractEmail(payload: JWTPayload): string | null {
+  if (looksLikeEmail(payload.email)) return payload.email.trim();
+  if (looksLikeEmail(payload.preferred_username)) return payload.preferred_username.trim();
+  return null;
+}
+
+/**
+ * Decide se o e-mail pode ser tratado como verificado pelo provedor.
+ *
+ * Isto governa a vinculação automática a uma conta existente (`resolveOAuthUser`), então é uma
+ * fronteira de segurança: dizer "verificado" sem que o provedor garanta abre tomada de conta por
+ * e-mail. Cada provedor tem contrato próprio:
+ *
+ * - **Google** emite `email_verified` (claim padrão OIDC). É a fonte da verdade.
+ * - **Microsoft Entra NÃO emite `email_verified`** no id_token v2.0. A claim equivalente é
+ *   `xms_edov` (*email domain owner verified*), que precisa ser habilitada como claim opcional no
+ *   app registration. Sem ela, nada é verificado — e essa é a resposta segura, não um bug: o
+ *   usuário cai no fluxo de confirmação em vez de ser vinculado às cegas.
+ *
+ * Ler `email_verified` para os dois, como se fazia antes, tornava TODO usuário Microsoft não
+ * verificado: quem já tinha conta por senha nunca conseguia vincular, e todo usuário novo nascia
+ * sem a garantia que o SSO deveria trazer de graça.
+ */
+function isEmailVerifiedByProvider(
+  provider: OAuthProviderName,
+  payload: JWTPayload,
+): boolean {
+  if (provider === 'google') {
+    return payload.email_verified === true;
+  }
+
+  // Microsoft: `xms_edov` vem como boolean ou como a string "1"/"true", dependendo da configuração
+  // da claim opcional. Aceita as duas formas; qualquer outra coisa é não verificado.
+  const edov = (payload as Record<string, unknown>).xms_edov;
+  if (edov === true || edov === 1 || edov === '1' || edov === 'true') return true;
+
+  // `email_verified` não é emitida pela Microsoft hoje, mas se um dia for, é sinal legítimo.
+  return payload.email_verified === true;
+}
+
 function payloadToIdentity(
   provider: OAuthProviderName,
   payload: JWTPayload,
 ): OAuthIdentity {
-  const email =
-    typeof payload.email === 'string'
-      ? payload.email
-      : typeof payload.preferred_username === 'string'
-        ? payload.preferred_username
-        : null;
-
   return {
     provider,
     subject: String(payload.sub),
-    email,
-    emailVerified: payload.email_verified === true,
+    email: extractEmail(payload),
+    emailVerified: isEmailVerifiedByProvider(provider, payload),
     displayName: typeof payload.name === 'string' ? payload.name : null,
     avatarUrl: typeof payload.picture === 'string' ? payload.picture : null,
     providerTenantId: typeof payload.tid === 'string' ? payload.tid : null,
@@ -203,3 +250,6 @@ export function buildProviderAuthorizeUrl(
   }
   return buildMicrosoftAuthorizeUrl(input);
 }
+
+/** Exportado só para teste — a lógica de identidade é fronteira de segurança e precisa de prova. */
+export const __testing__ = { payloadToIdentity, extractEmail, isEmailVerifiedByProvider };

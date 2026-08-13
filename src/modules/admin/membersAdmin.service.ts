@@ -23,6 +23,7 @@ import {
   toPublicMembership,
 } from '../memberships/memberships.service.js';
 import { revokeSessionsByActiveMembership } from '../sessions/sessionsRevoke.service.js';
+import { revokeMembershipSharesInMainApp } from '../../integrations/appProvisioning.js';
 import { findUserByEmailLookup, findUserById, toPublicUser } from '../users/users.service.js';
 import {
   assertCanGrantRoles,
@@ -256,6 +257,39 @@ export async function updateMemberAccessGroups(
   return toPublicMembership(updated!);
 }
 
+/**
+ * Corta os compartilhamentos que o membro concedeu, no app principal.
+ *
+ * Revogar a sessão fecha a porta para a pessoa, não para o que ela deixou aberto: o link externo
+ * que ela criou continuava servindo o arquivo a um terceiro sem login. O resultado vai para a
+ * trilha, inclusive quando falha — perder a revogação é ruim, mas travar um desligamento porque o
+ * app principal está fora do ar seria pior.
+ */
+async function revokeSharesForEndedMembership(input: {
+  tenantTextId: string;
+  userId: string;
+  membershipId: string;
+  reason: 'membership_removed' | 'membership_blocked';
+}): Promise<Record<string, unknown>> {
+  const result = await revokeMembershipSharesInMainApp({
+    tenantId: input.tenantTextId,
+    userId: input.userId,
+    membershipId: input.membershipId,
+    reason: input.reason,
+  });
+
+  if (!result.ok) {
+    return { sharesRevocationFailed: result.error };
+  }
+
+  return {
+    sharesRevoked: {
+      internal: result.revokedInternal,
+      external: result.revokedExternal,
+    },
+  };
+}
+
 export async function removeMember(
   actor: AdminActor,
   membershipId: string,
@@ -277,6 +311,13 @@ export async function removeMember(
 
   await revokeSessionsByActiveMembership(membershipId);
 
+  const shareRevocation = await revokeSharesForEndedMembership({
+    tenantTextId: target.tenant.tenantId,
+    userId: target.userId,
+    membershipId,
+    reason: 'membership_removed',
+  });
+
   await logAuthAudit(
     'membership.removed',
     auditCtx(actor, {
@@ -285,6 +326,7 @@ export async function removeMember(
       tenantTextId: target.tenant.tenantId,
       ipHash: ctx?.ipHash,
       userAgentHash: ctx?.userAgentHash,
+      metadata: shareRevocation,
     }),
   );
 
@@ -461,6 +503,13 @@ export async function blockMembership(
 
   const revokedSessionsCount = await revokeSessionsByActiveMembership(targetMembershipId);
 
+  const shareRevocation = await revokeSharesForEndedMembership({
+    tenantTextId: target.tenant.tenantId,
+    userId: target.userId,
+    membershipId: targetMembershipId,
+    reason: 'membership_blocked',
+  });
+
   await logAuthAudit(
     'membership.blocked',
     auditCtx(actor, {
@@ -473,6 +522,7 @@ export async function blockMembership(
         ...(reason ? { reason } : {}),
         notifyUser: input?.notifyUser ?? false,
         revokedSessionsCount,
+        ...shareRevocation,
       },
     }),
   );

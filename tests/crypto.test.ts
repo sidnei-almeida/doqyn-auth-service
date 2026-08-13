@@ -38,7 +38,8 @@ describe('crypto', () => {
 
   it('hashLookup muda se o secret mudar', () => {
     const original = hashLookup('usuario@empresa.com');
-    process.env.LOOKUP_HASH_SECRET = 'outro-secret';
+    // 32+ chars: o mesmo mínimo exigido em produção, agora validado no boot
+    process.env.LOOKUP_HASH_SECRET = 'outro-secret-com-32-chars-ou-mais';
     resetEnvCache();
     const changed = hashLookup('usuario@empresa.com');
     expect(changed).not.toBe(original);

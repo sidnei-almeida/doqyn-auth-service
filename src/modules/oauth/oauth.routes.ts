@@ -74,6 +74,24 @@ function registerProviderRoutes(app: FastifyInstance, provider: OAuthProviderNam
 }
 
 export async function oauthRoutes(app: FastifyInstance): Promise<void> {
+  /**
+   * Provedores realmente habilitados nesta instalação.
+   *
+   * Sem isto o front não tinha como saber, e mostrava todos os botões: quem clicasse num provedor
+   * desabilitado recebia um JSON de 404 `OAUTH_PROVIDER_DISABLED` na cara. Botão que existe tem de
+   * funcionar.
+   *
+   * Público de propósito — a resposta é a mesma para qualquer visitante e não revela segredo algum,
+   * apenas quais botões desenhar na tela de login.
+   */
+  app.get('/oauth/providers', async (_request, reply) => {
+    const providers: OAuthProviderName[] = (['google', 'microsoft'] as const).filter((provider) =>
+      isOAuthProviderEnabled(provider),
+    );
+
+    return reply.send({ ok: true, providers });
+  });
+
   registerProviderRoutes(app, 'google');
   registerProviderRoutes(app, 'microsoft');
 }

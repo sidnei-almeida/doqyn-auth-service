@@ -1,6 +1,9 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
-import { formatTermsValidationResponse } from '../terms/termsAcceptance.validation.js';
+import {
+  formatTermsValidationResponse,
+  mapTermsValidationError,
+} from '../terms/termsAcceptance.validation.js';
 import {
   AUTH_DATABASE_UNAVAILABLE_CODE,
   AUTH_DATABASE_UNAVAILABLE_MESSAGE,
@@ -45,9 +48,15 @@ import { validateSessionByToken } from '../sessions/sessions.service.js';
 import { selectTenantSchema } from '../admin/admin.schemas.js';
 import { accessRequestSchema } from '../access-requests/accessRequests.schemas.js';
 import { submitAccessRequest } from '../access-requests/accessRequests.service.js';
-import { companySignupSchema } from '../company-signups/companySignups.schemas.js';
+import {
+  companySignupAttachSchema,
+  companySignupSchema,
+} from '../company-signups/companySignups.schemas.js';
 import { submitCompanySignup } from '../company-signups/companySignups.service.js';
-import { individualSignupSchema } from '../individual-signups/individualSignups.schemas.js';
+import {
+  individualSignupAttachSchema,
+  individualSignupSchema,
+} from '../individual-signups/individualSignups.schemas.js';
 import { submitIndividualSignup } from '../individual-signups/individualSignups.service.js';
 import { requireSession, type AuthenticatedRequest } from '../admin/adminAuth.js';
 import { AUTH_ERROR_MESSAGES } from '../../utils/authErrorCodes.js';
@@ -60,6 +69,48 @@ import {
 function getSessionTokenFromRequest(request: FastifyRequest): string | undefined {
   const cookieName = getSessionCookieName();
   return request.cookies[cookieName];
+}
+
+/**
+ * Usuário já autenticado no momento do cadastro, se houver.
+ *
+ * É o que separa os dois modos das rotas de cadastro: sem sessão, cria conta nova com senha;
+ * com sessão, anexa tenant e membership à conta existente. O caso real é quem acabou de
+ * entrar por OAuth — o callback já criou o usuário, então tentar criar de novo esbarraria em
+ * EMAIL_ALREADY_EXISTS e o onboarding ficaria sem saída.
+ */
+async function resolveSignupSessionUserId(request: FastifyRequest): Promise<string | null> {
+  const token = getSessionTokenFromRequest(request);
+  if (!token) return null;
+
+  const sessionResult = await validateSessionByToken(token);
+  return sessionResult.valid ? sessionResult.user.id : null;
+}
+
+/**
+ * Resposta de validação do cadastro.
+ *
+ * Antes devolvia sempre o genérico "Dados inválidos.", o que escondeu por completo o fato de
+ * o frontend não estar enviando `country` e `taxIdType` — nenhum cadastro passava, e a
+ * resposta não dizia por quê. Agora a mensagem do primeiro problema vai junto, e campo
+ * ausente é nomeado (a mensagem do Zod nesse caso é só "Required").
+ */
+function signupValidationResponse(error: ZodError): { code: string; message: string } {
+  const termsError = mapTermsValidationError(error);
+  if (termsError) return termsError;
+
+  const issue = error.issues[0];
+  if (!issue) return { code: 'VALIDATION_ERROR', message: 'Dados inválidos.' };
+
+  const field = issue.path.join('.');
+  const message =
+    issue.code === 'invalid_type' && issue.received === 'undefined'
+      ? `Campo obrigatório ausente: ${field}.`
+      : field
+        ? `${issue.message} (campo: ${field})`
+        : issue.message;
+
+  return { code: 'VALIDATION_ERROR', message };
 }
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
@@ -164,19 +215,27 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/auth/company-signups', async (request, reply) => {
-    const parsed = companySignupSchema.safeParse(request.body);
+    const attachToUserId = await resolveSignupSessionUserId(request);
+    const parsed = (attachToUserId ? companySignupAttachSchema : companySignupSchema).safeParse(
+      request.body,
+    );
     if (!parsed.success) {
-      const termsError = formatTermsValidationResponse(parsed.error);
+      const validationError = signupValidationResponse(parsed.error);
       return reply.status(400).send({
         ok: false,
-        message: termsError.message,
-        code: termsError.code,
+        message: validationError.message,
+        code: validationError.code,
       });
     }
     const ctx = extractRequestContext(request);
     await checkSignupRateLimit(ctx.ipHash);
 
-    const result = await submitCompanySignup(parsed.data, ctx.ipHash, ctx.userAgentHash);
+    const result = await submitCompanySignup(
+      parsed.data,
+      ctx.ipHash,
+      ctx.userAgentHash,
+      attachToUserId ? { attachToUserId } : undefined,
+    );
 
     setSessionCookie(reply, result.sessionToken, {
       maxAgeSeconds: getSessionTtlSeconds(),
@@ -192,19 +251,27 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/auth/individual-signups', async (request, reply) => {
-    const parsed = individualSignupSchema.safeParse(request.body);
+    const attachToUserId = await resolveSignupSessionUserId(request);
+    const parsed = (
+      attachToUserId ? individualSignupAttachSchema : individualSignupSchema
+    ).safeParse(request.body);
     if (!parsed.success) {
-      const termsError = formatTermsValidationResponse(parsed.error);
+      const validationError = signupValidationResponse(parsed.error);
       return reply.status(400).send({
         ok: false,
-        message: termsError.message,
-        code: termsError.code,
+        message: validationError.message,
+        code: validationError.code,
       });
     }
     const ctx = extractRequestContext(request);
     await checkSignupRateLimit(ctx.ipHash);
 
-    const result = await submitIndividualSignup(parsed.data, ctx.ipHash, ctx.userAgentHash);
+    const result = await submitIndividualSignup(
+      parsed.data,
+      ctx.ipHash,
+      ctx.userAgentHash,
+      attachToUserId ? { attachToUserId } : undefined,
+    );
 
     setSessionCookie(reply, result.sessionToken, {
       maxAgeSeconds: getSessionTtlSeconds(),

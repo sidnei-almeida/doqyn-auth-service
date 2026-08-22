@@ -78,7 +78,8 @@ describe('company signups', () => {
     expect(groups.length).toBe(0);
     expect(body.activeMembership.accessGroupIds ?? []).toEqual([]);
 
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    // Provisionamento do tenant + sincronização do membro (signupOrchestrator).
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
   it('CNPJ duplicado retorna COMPANY_ALREADY_EXISTS', async () => {

@@ -79,7 +79,9 @@ describe('individual signups', () => {
     const groups = await prisma.authAccessGroup.findMany({ where: { tenantId: tenant!.id } });
     expect(groups.length).toBe(0);
 
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    // Duas chamadas externas: provisionamento do tenant no app principal e, em seguida,
+    // a sincronização do membro (signupOrchestrator).
+    expect(mockFetch).toHaveBeenCalledTimes(2);
     const provisionBody = JSON.parse(mockFetch.mock.calls[0][1].body as string);
     expect(provisionBody.tenantType).toBe('individual');
     expect(provisionBody.collectionPrefix).toBe('compartilhado');

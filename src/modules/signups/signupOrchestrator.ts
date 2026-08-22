@@ -2,7 +2,7 @@ import type { AuthUser } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { provisionTenantInMainApp } from '../../integrations/appProvisioning.js';
 import { hashSessionToken } from '../../security/crypto.js';
-import { ValidationError } from '../../utils/errors.js';
+import { ConflictError, ValidationError } from '../../utils/errors.js';
 import { logAuthAudit, type AuditAction } from '../audit/authAudit.service.js';
 import type { PublicMembership } from '../memberships/memberships.schemas.js';
 import { toPublicMembership } from '../memberships/memberships.service.js';
@@ -154,4 +154,23 @@ export async function logSignupCreatedAudits(
   await logAuthAudit(`${prefix}.requested` as AuditAction, auditBase);
   await logAuthAudit(`${prefix}.tenant_created` as AuditAction, auditBase);
   await logAuthAudit(`${prefix}.admin_created` as AuditAction, auditBase);
+}
+
+/**
+ * Guarda do cadastro autenticado: a sessão só pode anexar um tenant se a conta ainda não
+ * tiver nenhum vínculo. Sem isto, uma sessão válida criaria tenants em sequência, cada um
+ * com um documento fiscal diferente.
+ */
+export async function assertUserCanAttachTenant(userId: string): Promise<void> {
+  const existing = await prisma.authMembership.findFirst({
+    where: { userId, status: { not: 'removed' } },
+    select: { id: true },
+  });
+
+  if (existing) {
+    throw new ConflictError(
+      'Sua conta já está vinculada a um espaço de trabalho.',
+      'MEMBERSHIP_ALREADY_EXISTS',
+    );
+  }
 }

@@ -86,7 +86,7 @@ const envSchema = z.object({
   OAUTH_POST_LOGIN_REDIRECT_URL: z
     .string()
     .optional()
-    .default('http://localhost:5173/auth/oauth/callback'),
+    .default('http://localhost:5173/sso/callback'),
   OAUTH_ERROR_REDIRECT_URL: z.string().optional().default('http://localhost:5173/login'),
   DOQYN_APP_PUBLIC_URL: z.string().optional().default(''),
   EMAIL_FROM: z.string().optional().default('noreply@doqyn.com.br'),

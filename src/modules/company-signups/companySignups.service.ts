@@ -16,8 +16,12 @@ import type { PublicMembership } from '../memberships/memberships.schemas.js';
 import { buildSessionContext } from '../memberships/sessionContext.service.js';
 import type { PublicUser } from '../users/users.schemas.js';
 import { toPublicUser } from '../users/users.service.js';
-import type { CompanySignupInput } from './companySignups.schemas.js';
+import type {
+  CompanySignupAttachInput,
+  CompanySignupInput,
+} from './companySignups.schemas.js';
 import {
+  assertUserCanAttachTenant,
   finalizeSignupProvisioning,
   logSignupCreatedAudits,
 } from '../signups/signupOrchestrator.js';
@@ -39,21 +43,28 @@ export interface CompanySignupSuccess {
   sessionToken: string;
 }
 
+/** Dois modos, mesma lógica do cadastro PF — ver `individualSignups.service.ts`. */
 export async function submitCompanySignup(
-  input: CompanySignupInput,
+  input: CompanySignupInput | CompanySignupAttachInput,
   ipHash?: string,
   userAgentHash?: string,
+  options?: { attachToUserId?: string },
 ): Promise<CompanySignupSuccess> {
-  const passwordError = validatePasswordStrength(input.password);
-  if (passwordError) {
-    throw new ValidationError(passwordError, 'WEAK_PASSWORD');
+  const attachToUserId = options?.attachToUserId;
+  const credentials = attachToUserId ? null : (input as CompanySignupInput);
+
+  if (credentials) {
+    const passwordError = validatePasswordStrength(credentials.password);
+    if (passwordError) {
+      throw new ValidationError(passwordError, 'WEAK_PASSWORD');
+    }
   }
 
-  const email = normalizeEmail(input.email);
+  const email = credentials ? normalizeEmail(credentials.email) : null;
   const whatsapp = normalizePhone(input.whatsapp, input.country as CountryCode);
   const taxId = normalizeTaxId(input.taxId);
   const taxIdHash = hashLookup(taxId);
-  const emailLookupHash = hashLookup(email);
+  const emailLookupHash = email ? hashLookup(email) : null;
 
   // Escopado por país: o mesmo taxIdHash pode legitimamente colidir entre países diferentes
   // (ex.: um CNPJ brasileiro e um RUC paraguaio com a mesma sequência de dígitos). Tenants
@@ -77,36 +88,49 @@ export async function submitCompanySignup(
     );
   }
 
-  const existingUser = await prisma.authUser.findUnique({ where: { emailLookupHash } });
-  if (existingUser) {
-    throw new ConflictError(
-      'Este e-mail já está em uso. Faça login ou use outro e-mail.',
-      'EMAIL_ALREADY_EXISTS',
-    );
+  if (emailLookupHash) {
+    const existingUser = await prisma.authUser.findUnique({ where: { emailLookupHash } });
+    if (existingUser) {
+      throw new ConflictError(
+        'Este e-mail já está em uso. Faça login ou use outro e-mail.',
+        'EMAIL_ALREADY_EXISTS',
+      );
+    }
+  } else {
+    await assertUserCanAttachTenant(attachToUserId!);
   }
 
   const tenantTextId = generateBusinessTenantId(input.companyName);
   const collectionPrefix = tenantTextId;
-  const passwordHash = await hashPassword(input.password);
+  const passwordHash = credentials ? await hashPassword(credentials.password) : null;
   const displayName = input.companyName.trim();
 
   const created = await prisma.$transaction(async (tx) => {
-    const user = await tx.authUser.create({
-      data: {
-        emailEncrypted: encryptField(email),
-        emailLookupHash,
-        firstNameEncrypted: encryptField(input.firstName),
-        lastNameEncrypted: encryptField(input.lastName),
-        whatsappEncrypted: encryptField(whatsapp),
-        whatsappLookupHash: hashLookup(whatsapp),
-        status: 'active',
-        emailVerified: true,
-      },
-    });
+    const profile = {
+      firstNameEncrypted: encryptField(input.firstName),
+      lastNameEncrypted: encryptField(input.lastName),
+      whatsappEncrypted: encryptField(whatsapp),
+      whatsappLookupHash: hashLookup(whatsapp),
+      status: 'active' as const,
+      emailVerified: true,
+    };
 
-    await tx.authCredential.create({
-      data: { userId: user.id, passwordHash },
-    });
+    const user =
+      attachToUserId && !email
+        ? await tx.authUser.update({ where: { id: attachToUserId }, data: profile })
+        : await tx.authUser.create({
+            data: {
+              emailEncrypted: encryptField(email!),
+              emailLookupHash: emailLookupHash!,
+              ...profile,
+            },
+          });
+
+    if (passwordHash) {
+      await tx.authCredential.create({
+        data: { userId: user.id, passwordHash },
+      });
+    }
 
     const tenant = await tx.authTenant.create({
       data: {

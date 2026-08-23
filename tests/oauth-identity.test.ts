@@ -175,3 +175,25 @@ describe('emissor do id_token do Entra', () => {
     ).toThrow('OAUTH_ISSUER_INVALID');
   });
 });
+
+describe('conta pessoal Microsoft — prova de posse vem da criação da conta', () => {
+  const MSA = '9188040d-6c67-4c5b-b112-36a304b66dad';
+  const CORP = '010e8cf0-f8ee-4da8-acb3-2ee3c7a82c19';
+  const verified = (over: JWTPayload) => payloadToIdentity('microsoft', base(over)).emailVerified;
+
+  it('aceita conta pessoal com a claim email, mesmo sem xms_edov', () => {
+    // Caso real: MSA com endereço @gmail.com. `xms_edov` nunca vem — o dono do domínio é o Google.
+    expect(verified({ tid: MSA, email: 'pessoa@gmail.com' })).toBe(true);
+  });
+
+  it('RECUSA conta pessoal cujo e-mail veio só do preferred_username', () => {
+    // UPN pode ser alias interno que ninguém confirmou; aceitá-lo reabriria o buraco.
+    expect(verified({ tid: MSA, preferred_username: 'pessoa@gmail.com' })).toBe(false);
+    expect(verified({ tid: MSA })).toBe(false);
+  });
+
+  it('conta corporativa continua dependendo de xms_edov', () => {
+    expect(verified({ tid: CORP, email: 'pessoa@empresa.com' })).toBe(false);
+    expect(verified({ tid: CORP, email: 'pessoa@empresa.com', xms_edov: true })).toBe(true);
+  });
+});

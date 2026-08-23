@@ -190,6 +190,9 @@ function microsoftKeyTenant(idToken: string, configuredTenant: string): string {
   return configuredTenant;
 }
 
+/** Tenant fixo das contas pessoais Microsoft (MSA). Igual para todo consumidor, em todo mundo. */
+const MICROSOFT_CONSUMER_TENANT_ID = '9188040d-6c67-4c5b-b112-36a304b66dad';
+
 const looksLikeEmail = (value: unknown): value is string =>
   typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
@@ -223,6 +226,12 @@ function extractEmail(payload: JWTPayload): string | null {
  * Ler `email_verified` para os dois, como se fazia antes, tornava TODO usuário Microsoft não
  * verificado: quem já tinha conta por senha nunca conseguia vincular, e todo usuário novo nascia
  * sem a garantia que o SSO deveria trazer de graça.
+ *
+ * - **Conta pessoal Microsoft** (tenant `9188040d-…`) nunca terá `xms_edov`: a claim afirma que o
+ *   dono do DOMÍNIO verificou o endereço, e o dono de `gmail.com` não é a Microsoft. Só que a
+ *   Microsoft exige confirmação por código no endereço para criar a conta — a mesma prova de posse
+ *   que sustenta o `email_verified` do Google. Exigir `xms_edov` aqui deixava esse usuário sem
+ *   saída nenhuma: nunca vincula, e o produto tem justamente esse público.
  */
 function isEmailVerifiedByProvider(provider: OAuthProviderName, payload: JWTPayload): boolean {
   if (provider === 'google') {
@@ -233,6 +242,11 @@ function isEmailVerifiedByProvider(provider: OAuthProviderName, payload: JWTPayl
   // da claim opcional. Aceita as duas formas; qualquer outra coisa é não verificado.
   const edov = (payload as Record<string, unknown>).xms_edov;
   if (edov === true || edov === 1 || edov === '1' || edov === 'true') return true;
+
+  // Conta pessoal: a prova de posse é da criação da conta, não do domínio. Exige a claim `email` —
+  // `preferred_username` é UPN e pode ser um alias interno que ninguém confirmou, então aceitá-lo
+  // aqui devolveria o buraco que este ramo existe para fechar.
+  if (payload.tid === MICROSOFT_CONSUMER_TENANT_ID && looksLikeEmail(payload.email)) return true;
 
   // `email_verified` não é emitida pela Microsoft hoje, mas se um dia for, é sinal legítimo.
   return payload.email_verified === true;

@@ -166,6 +166,24 @@ describe('emissor do id_token do Entra', () => {
     );
   });
 
+  it('com organizations, recusa conta pessoal — o alias exclui MSA de propósito', () => {
+    expect(() =>
+      assertMicrosoftIssuer({ iss: issuerOf(PERSONAL_GUID), tid: PERSONAL_GUID }, 'organizations'),
+    ).toThrow('OAUTH_ISSUER_TENANT_MISMATCH');
+    expect(() =>
+      assertMicrosoftIssuer({ iss: issuerOf(TENANT_GUID), tid: TENANT_GUID }, 'organizations'),
+    ).not.toThrow();
+  });
+
+  it('com consumers, recusa tenant corporativo', () => {
+    expect(() =>
+      assertMicrosoftIssuer({ iss: issuerOf(TENANT_GUID), tid: TENANT_GUID }, 'consumers'),
+    ).toThrow('OAUTH_ISSUER_TENANT_MISMATCH');
+    expect(() =>
+      assertMicrosoftIssuer({ iss: issuerOf(PERSONAL_GUID), tid: PERSONAL_GUID }, 'consumers'),
+    ).not.toThrow();
+  });
+
   it('com tenant fixo, exige aquele tenant e nenhum outro', () => {
     expect(() =>
       assertMicrosoftIssuer({ iss: issuerOf(TENANT_GUID), tid: TENANT_GUID }, TENANT_GUID),
@@ -195,5 +213,18 @@ describe('conta pessoal Microsoft — prova de posse vem da criação da conta',
   it('conta corporativa continua dependendo de xms_edov', () => {
     expect(verified({ tid: CORP, email: 'pessoa@empresa.com' })).toBe(false);
     expect(verified({ tid: CORP, email: 'pessoa@empresa.com', xms_edov: true })).toBe(true);
+  });
+
+  it('xms_edov não vale para e-mail que veio do preferred_username', () => {
+    // Usuário Entra sem atributo `mail`: `extractEmail` cai no UPN, e `xms_edov` não afirma nada
+    // sobre ele. Aceitar aqui vincularia automaticamente a conta de outra pessoa.
+    expect(verified({ tid: CORP, xms_edov: true, preferred_username: 'alice@parceira.com' })).toBe(
+      false,
+    );
+  });
+
+  it('tid em caixa alta continua sendo conta pessoal', () => {
+    // GUID não tem caixa canônica; `assertMicrosoftIssuer` já compara minúsculo.
+    expect(verified({ tid: MSA.toUpperCase(), email: 'pessoa@gmail.com' })).toBe(true);
   });
 });

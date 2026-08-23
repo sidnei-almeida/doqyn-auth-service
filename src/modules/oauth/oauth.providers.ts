@@ -128,6 +128,17 @@ function microsoftJwks(tenant: string) {
   return jwks;
 }
 
+/** Tenant fixo das contas pessoais Microsoft (MSA). Igual para todo consumidor, em todo mundo. */
+const MICROSOFT_CONSUMER_TENANT_ID = '9188040d-6c67-4c5b-b112-36a304b66dad';
+
+/**
+ * O `tid` chega como GUID e GUID não tem caixa canônica. `assertMicrosoftIssuer` já compara
+ * minúsculo contra o `iss`; comparar cru em qualquer outro lugar produz divergência silenciosa —
+ * o mesmo token passaria numa checagem e falharia na outra.
+ */
+const isConsumerTenant = (tid: unknown): boolean =>
+  typeof tid === 'string' && tid.toLowerCase() === MICROSOFT_CONSUMER_TENANT_ID;
+
 /** Endereços de entrada do Entra: roteiam o login, mas nunca aparecem como emissor do token. */
 const MICROSOFT_MULTITENANT_ALIASES = new Set(['common', 'organizations', 'consumers']);
 
@@ -167,6 +178,17 @@ export function assertMicrosoftIssuer(payload: JWTPayload, tenant: string): void
   if (typeof payload.tid !== 'string' || payload.tid.toLowerCase() !== match[1]) {
     throw new Error('OAUTH_ISSUER_TENANT_MISMATCH');
   }
+
+  // `organizations` e `consumers` não são sinônimos de `common`: o operador que escolheu um deles
+  // excluiu metade do mundo de propósito. Sem esta checagem o alias aceitava qualquer tenant GUID,
+  // conta pessoal inclusive — e ela hoje entra como e-mail verificado, com vinculação automática.
+  const isConsumer = isConsumerTenant(payload.tid);
+  if (tenant === 'organizations' && isConsumer) {
+    throw new Error('OAUTH_ISSUER_TENANT_MISMATCH');
+  }
+  if (tenant === 'consumers' && !isConsumer) {
+    throw new Error('OAUTH_ISSUER_TENANT_MISMATCH');
+  }
 }
 
 /**
@@ -189,9 +211,6 @@ function microsoftKeyTenant(idToken: string, configuredTenant: string): string {
 
   return configuredTenant;
 }
-
-/** Tenant fixo das contas pessoais Microsoft (MSA). Igual para todo consumidor, em todo mundo. */
-const MICROSOFT_CONSUMER_TENANT_ID = '9188040d-6c67-4c5b-b112-36a304b66dad';
 
 const looksLikeEmail = (value: unknown): value is string =>
   typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
@@ -241,12 +260,17 @@ function isEmailVerifiedByProvider(provider: OAuthProviderName, payload: JWTPayl
   // Microsoft: `xms_edov` vem como boolean ou como a string "1"/"true", dependendo da configuração
   // da claim opcional. Aceita as duas formas; qualquer outra coisa é não verificado.
   const edov = (payload as Record<string, unknown>).xms_edov;
-  if (edov === true || edov === 1 || edov === '1' || edov === 'true') return true;
+  const edovIsTrue = edov === true || edov === 1 || edov === '1' || edov === 'true';
+
+  // `xms_edov` afirma que o dono do domínio verificou o endereço da claim `email` — não diz nada
+  // sobre o `preferred_username`. Sem exigir `email` aqui, um usuário Entra com `mail` vazio caía
+  // no UPN de `extractEmail` e ainda assim saía verificado, vinculando conta alheia.
+  if (edovIsTrue && looksLikeEmail(payload.email)) return true;
 
   // Conta pessoal: a prova de posse é da criação da conta, não do domínio. Exige a claim `email` —
   // `preferred_username` é UPN e pode ser um alias interno que ninguém confirmou, então aceitá-lo
   // aqui devolveria o buraco que este ramo existe para fechar.
-  if (payload.tid === MICROSOFT_CONSUMER_TENANT_ID && looksLikeEmail(payload.email)) return true;
+  if (isConsumerTenant(payload.tid) && looksLikeEmail(payload.email)) return true;
 
   // `email_verified` não é emitida pela Microsoft hoje, mas se um dia for, é sinal legítimo.
   return payload.email_verified === true;

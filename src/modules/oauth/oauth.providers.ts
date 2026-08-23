@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
+import { createRemoteJWKSet, decodeJwt, jwtVerify, type JWTPayload } from 'jose';
 import type { OAuthIdentity, OAuthProviderName } from './oauth.types.js';
 import { getGoogleOAuthConfig, getMicrosoftOAuthConfig } from './oauth.config.js';
 
@@ -111,10 +111,83 @@ export async function exchangeMicrosoftCode(input: {
 
 const googleJwks = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));
 
+/**
+ * `createRemoteJWKSet` mantém cache próprio das chaves, então recriá-lo a cada login jogaria fora
+ * esse cache e buscaria o JWKS de novo em toda volta do provedor. Um por tenant, guardado.
+ */
+const microsoftJwksByTenant = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+
 function microsoftJwks(tenant: string) {
-  return createRemoteJWKSet(
+  const cached = microsoftJwksByTenant.get(tenant);
+  if (cached) return cached;
+
+  const jwks = createRemoteJWKSet(
     new URL(`https://login.microsoftonline.com/${tenant}/discovery/v2.0/keys`),
   );
+  microsoftJwksByTenant.set(tenant, jwks);
+  return jwks;
+}
+
+/** Endereços de entrada do Entra: roteiam o login, mas nunca aparecem como emissor do token. */
+const MICROSOFT_MULTITENANT_ALIASES = new Set(['common', 'organizations', 'consumers']);
+
+const MICROSOFT_ISSUER_PATTERN =
+  /^https:\/\/login\.microsoftonline\.com\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/v2\.0$/;
+
+/**
+ * Emissor esperado do id_token do Entra.
+ *
+ * `OAUTH_MICROSOFT_TENANT=common` é endereço de entrada, não identidade de emissor: o Entra emite
+ * sempre o tenant concreto de quem logou — `https://login.microsoftonline.com/{tid}/v2.0`, com o
+ * GUID do diretório, ou `9188040d-…` para conta pessoal Microsoft. Colar `common` na URL do issuer
+ * e exigir igualdade rejeitava **todo** login com `unexpected "iss" claim value`.
+ *
+ * Em app multitenant a validação correta é de forma, não de valor fixo: o `iss` tem que ser um
+ * tenant GUID e tem que ser o mesmo tenant que o token declara em `tid`. Sem amarrar as duas
+ * claims, um token legítimo de um tenant poderia ser apresentado como se fosse de outro.
+ *
+ * Com tenant fixo (GUID ou domínio próprio no `.env`), continua comparação exata — quem restringe
+ * o login a um diretório espera exatamente isso.
+ */
+export function assertMicrosoftIssuer(payload: JWTPayload, tenant: string): void {
+  const issuer = typeof payload.iss === 'string' ? payload.iss : '';
+
+  if (!MICROSOFT_MULTITENANT_ALIASES.has(tenant)) {
+    if (issuer !== `https://login.microsoftonline.com/${tenant}/v2.0`) {
+      throw new Error('OAUTH_ISSUER_INVALID');
+    }
+    return;
+  }
+
+  const match = MICROSOFT_ISSUER_PATTERN.exec(issuer);
+  if (!match) {
+    throw new Error('OAUTH_ISSUER_INVALID');
+  }
+
+  if (typeof payload.tid !== 'string' || payload.tid.toLowerCase() !== match[1]) {
+    throw new Error('OAUTH_ISSUER_TENANT_MISMATCH');
+  }
+}
+
+/**
+ * Tenant de onde buscar as chaves de assinatura.
+ *
+ * A Microsoft documenta que app multitenant valide a assinatura pelo endpoint do tenant emissor, e
+ * não pelo `common`. O `tid` sai daqui do token ainda não verificado, o que é seguro porque ele só
+ * escolhe QUAL chave tentar: assinatura falsa não passa em chave nenhuma, e `assertMicrosoftIssuer`
+ * amarra `iss` e `tid` depois da verificação.
+ */
+function microsoftKeyTenant(idToken: string, configuredTenant: string): string {
+  if (!MICROSOFT_MULTITENANT_ALIASES.has(configuredTenant)) return configuredTenant;
+
+  try {
+    const tid = decodeJwt(idToken).tid;
+    if (typeof tid === 'string' && /^[0-9a-f-]{36}$/.test(tid)) return tid;
+  } catch {
+    // Token ilegível cai no endpoint comum e morre na verificação de assinatura, como deve.
+  }
+
+  return configuredTenant;
 }
 
 const looksLikeEmail = (value: unknown): value is string =>
@@ -151,10 +224,7 @@ function extractEmail(payload: JWTPayload): string | null {
  * verificado: quem já tinha conta por senha nunca conseguia vincular, e todo usuário novo nascia
  * sem a garantia que o SSO deveria trazer de graça.
  */
-function isEmailVerifiedByProvider(
-  provider: OAuthProviderName,
-  payload: JWTPayload,
-): boolean {
+function isEmailVerifiedByProvider(provider: OAuthProviderName, payload: JWTPayload): boolean {
   if (provider === 'google') {
     return payload.email_verified === true;
   }
@@ -168,10 +238,7 @@ function isEmailVerifiedByProvider(
   return payload.email_verified === true;
 }
 
-function payloadToIdentity(
-  provider: OAuthProviderName,
-  payload: JWTPayload,
-): OAuthIdentity {
+function payloadToIdentity(provider: OAuthProviderName, payload: JWTPayload): OAuthIdentity {
   return {
     provider,
     subject: String(payload.sub),
@@ -183,10 +250,7 @@ function payloadToIdentity(
   };
 }
 
-export async function verifyGoogleIdToken(
-  idToken: string,
-  nonce: string,
-): Promise<OAuthIdentity> {
+export async function verifyGoogleIdToken(idToken: string, nonce: string): Promise<OAuthIdentity> {
   const config = getGoogleOAuthConfig();
   const { payload } = await jwtVerify(idToken, googleJwks, {
     issuer: ['https://accounts.google.com', 'accounts.google.com'],
@@ -206,12 +270,12 @@ export async function verifyMicrosoftIdToken(
 ): Promise<OAuthIdentity> {
   const config = getMicrosoftOAuthConfig();
   const tenant = config.tenant;
-  const issuer = `https://login.microsoftonline.com/${tenant}/v2.0`;
 
-  const { payload } = await jwtVerify(idToken, microsoftJwks(tenant), {
-    issuer,
+  const { payload } = await jwtVerify(idToken, microsoftJwks(microsoftKeyTenant(idToken, tenant)), {
     audience: config.clientId,
   });
+
+  assertMicrosoftIssuer(payload, tenant);
 
   if (payload.nonce !== nonce) {
     throw new Error('OAUTH_NONCE_INVALID');

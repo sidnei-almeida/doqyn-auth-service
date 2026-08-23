@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { SignJWT, exportJWK, generateKeyPair, type JWTPayload } from 'jose';
 
-import { __testing__ } from '../src/modules/oauth/oauth.providers.js';
+import { __testing__, assertMicrosoftIssuer } from '../src/modules/oauth/oauth.providers.js';
 
 const { payloadToIdentity } = __testing__;
 
@@ -97,7 +97,10 @@ describe('demais campos da identidade', () => {
   });
 
   it('ignora campos com tipo inesperado em vez de propagar lixo', () => {
-    const id = payloadToIdentity('google', base({ email: 'a@b.com', name: 42, picture: {}, tid: 7 }));
+    const id = payloadToIdentity(
+      'google',
+      base({ email: 'a@b.com', name: 42, picture: {}, tid: 7 }),
+    );
     expect(id.displayName).toBeNull();
     expect(id.avatarUrl).toBeNull();
     expect(id.providerTenantId).toBeNull();
@@ -120,5 +123,55 @@ describe('id_token assinado de verdade continua sendo aceito', () => {
 
     expect(typeof token).toBe('string');
     expect(token.split('.')).toHaveLength(3);
+  });
+});
+
+describe('emissor do id_token do Entra', () => {
+  const TENANT_GUID = '010e8cf0-f8ee-4da8-acb3-2ee3c7a82c19';
+  const PERSONAL_GUID = '9188040d-6c67-4c5b-b112-36a304b66dad';
+  const issuerOf = (tid: string) => `https://login.microsoftonline.com/${tid}/v2.0`;
+
+  it('aceita o tenant concreto quando o app é multitenant (common)', () => {
+    // Regressão: exigir `.../common/v2.0` rejeitava TODO login com `unexpected "iss" claim value`.
+    // O Entra emite o tenant de quem logou, nunca o endereço de entrada.
+    expect(() =>
+      assertMicrosoftIssuer({ iss: issuerOf(TENANT_GUID), tid: TENANT_GUID }, 'common'),
+    ).not.toThrow();
+  });
+
+  it('aceita conta pessoal Microsoft, que tem tenant próprio', () => {
+    expect(() =>
+      assertMicrosoftIssuer({ iss: issuerOf(PERSONAL_GUID), tid: PERSONAL_GUID }, 'common'),
+    ).not.toThrow();
+  });
+
+  it('recusa token cujo iss não é de um tenant', () => {
+    expect(() =>
+      assertMicrosoftIssuer({ iss: issuerOf('common'), tid: TENANT_GUID }, 'common'),
+    ).toThrow('OAUTH_ISSUER_INVALID');
+    expect(() =>
+      assertMicrosoftIssuer(
+        { iss: 'https://login.evil.com/' + TENANT_GUID + '/v2.0', tid: TENANT_GUID },
+        'common',
+      ),
+    ).toThrow('OAUTH_ISSUER_INVALID');
+  });
+
+  it('recusa iss de um tenant e tid de outro — token de um diretório passando por outro', () => {
+    expect(() =>
+      assertMicrosoftIssuer({ iss: issuerOf(TENANT_GUID), tid: PERSONAL_GUID }, 'common'),
+    ).toThrow('OAUTH_ISSUER_TENANT_MISMATCH');
+    expect(() => assertMicrosoftIssuer({ iss: issuerOf(TENANT_GUID) }, 'common')).toThrow(
+      'OAUTH_ISSUER_TENANT_MISMATCH',
+    );
+  });
+
+  it('com tenant fixo, exige aquele tenant e nenhum outro', () => {
+    expect(() =>
+      assertMicrosoftIssuer({ iss: issuerOf(TENANT_GUID), tid: TENANT_GUID }, TENANT_GUID),
+    ).not.toThrow();
+    expect(() =>
+      assertMicrosoftIssuer({ iss: issuerOf(PERSONAL_GUID), tid: PERSONAL_GUID }, TENANT_GUID),
+    ).toThrow('OAUTH_ISSUER_INVALID');
   });
 });

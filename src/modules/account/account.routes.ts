@@ -14,7 +14,9 @@ import {
   deactivateUser,
   requestAccountDeletion,
   revokeUserSessionsAdmin,
+  updateOwnProfile,
 } from './account.service.js';
+import { updateOwnProfileSchema } from './account.schemas.js';
 
 export async function accountRoutes(app: FastifyInstance): Promise<void> {
   app.post('/auth/account/request-deletion', { preHandler: requireSession }, async (request, reply) => {
@@ -23,6 +25,14 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
     const authUser = (request as AuthenticatedRequest).authUser!;
     const result = await requestAccountDeletion(authUser.id, body.reason, ctx);
     return reply.send(result);
+  });
+
+  app.patch('/auth/account/profile', { preHandler: requireSession }, async (request, reply) => {
+    const body = updateOwnProfileSchema.parse(request.body ?? {});
+    const ctx = extractRequestContext(request);
+    const authUser = (request as AuthenticatedRequest).authUser!;
+    const user = await updateOwnProfile(authUser.id, body, ctx);
+    return reply.send({ ok: true, user });
   });
 
   app.post(

@@ -34,6 +34,41 @@ export async function requestAccountDeletion(
   return { ok: true, requestId: request.id };
 }
 
+/**
+ * Perfil da própria pessoa: nome e sobrenome. E-mail tem fluxo próprio, com confirmação,
+ * e papéis são decisão de quem administra — nada disso passa por aqui.
+ */
+export async function updateOwnProfile(
+  userId: string,
+  input: { firstName: string; lastName: string },
+  ctx?: { ipHash?: string; userAgentHash?: string },
+): Promise<PublicUser> {
+  const user = await findUserById(userId);
+  if (!user) {
+    throw new NotFoundError('Usuário não encontrado.');
+  }
+
+  const firstName = input.firstName.trim();
+  const lastName = input.lastName.trim();
+
+  const updated = await prisma.authUser.update({
+    where: { id: userId },
+    data: {
+      firstNameEncrypted: firstName ? encryptField(firstName) : null,
+      lastNameEncrypted: lastName ? encryptField(lastName) : null,
+    },
+  });
+
+  await logAuthAudit('account.profile_updated', {
+    userId,
+    ipHash: ctx?.ipHash,
+    userAgentHash: ctx?.userAgentHash,
+    metadata: { hasFirstName: Boolean(firstName), hasLastName: Boolean(lastName) },
+  });
+
+  return toPublicUser(updated);
+}
+
 export async function deactivateUser(
   actor: AdminActor,
   userId: string,

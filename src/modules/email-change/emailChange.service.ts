@@ -15,14 +15,8 @@ import {
 } from '../../utils/errors.js';
 import { normalizeEmail } from '../../utils/normalize.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
-import { sendEmail } from '../email/email.service.js';
+import { getPlatformSender, isPlatformEmailConfigured, sendEmail } from '../email/email.service.js';
 import { renderEmailChangeEmail } from '../email/renderEmailChangeEmail.js';
-import { findMembershipById, listUserMemberships } from '../memberships/memberships.service.js';
-import { getSessionRecordByToken } from '../memberships/sessionContext.service.js';
-import {
-  getTenantFromDomain,
-  resolveTenantSmtpTransport,
-} from '../tenant-email/tenantOutboundEmail.service.js';
 import {
   findUserByEmailLookup,
   findUserById,
@@ -33,35 +27,6 @@ import type { RequestEmailChangeInput } from './emailChange.schemas.js';
 
 function emailChangePath(token: string): string {
   return `/confirmar-email/${encodeURIComponent(token)}`;
-}
-
-async function resolveUserTenantUuid(userId: string, sessionToken: string): Promise<string | null> {
-  const session = await getSessionRecordByToken(sessionToken);
-  if (session?.activeMembershipId && session.userId === userId) {
-    const membership = await findMembershipById(session.activeMembershipId);
-    if (membership?.userId === userId) {
-      return membership.tenantId;
-    }
-  }
-
-  const memberships = await listUserMemberships(userId);
-  const active = memberships.filter((membership) => membership.status === 'active');
-  if (active.length === 1) {
-    return active[0].tenantId;
-  }
-
-  return null;
-}
-
-function assertNewEmailDomainAllowed(newEmail: string, fromDomain: string | null): void {
-  if (!fromDomain) return;
-  const domain = normalizeEmail(newEmail).split('@')[1]?.toLowerCase();
-  if (!domain || domain !== fromDomain.toLowerCase()) {
-    throw new ValidationError(
-      `Use um e-mail profissional do domínio @${fromDomain}.`,
-      'EMAIL_DOMAIN_MISMATCH',
-    );
-  }
 }
 
 async function invalidatePendingEmailChanges(userId: string): Promise<void> {
@@ -128,9 +93,6 @@ export async function requestEmailChange(
     throw new ConflictError('Este e-mail já está em uso.', 'EMAIL_ALREADY_EXISTS');
   }
 
-  const tenantUuid = await resolveUserTenantUuid(userId, sessionToken);
-  const fromDomain = tenantUuid ? await getTenantFromDomain(tenantUuid) : null;
-  assertNewEmailDomainAllowed(newEmail, fromDomain);
 
   await invalidatePendingEmailChanges(userId);
 
@@ -161,34 +123,27 @@ export async function requestEmailChange(
   const inviterName =
     [inviterPublic.firstName, inviterPublic.lastName].filter(Boolean).join(' ').trim() ||
     inviterPublic.email;
-  const smtpTransport = tenantUuid ? await resolveTenantSmtpTransport(tenantUuid) : null;
+  const sender = getPlatformSender();
+  const message = {
+    to: newEmail,
+    subject,
+    text,
+    html,
+    from: { name: sender.name, email: sender.email },
+    replyTo: { name: inviterName, email: currentEmail },
+  };
 
+  // Sai pelo SMTP da plataforma; sem ele o adapter de console registra e nada é enviado.
   let emailSent = false;
-  if (env.EMAIL_ENABLED && smtpTransport) {
+  if (isPlatformEmailConfigured()) {
     try {
-      await sendEmail(
-        {
-          to: newEmail,
-          subject,
-          text,
-          html,
-          from: { name: inviterName, email: currentEmail },
-          replyTo: { name: inviterName, email: currentEmail },
-        },
-        smtpTransport,
-      );
+      await sendEmail(message);
       emailSent = true;
     } catch {
       emailSent = false;
     }
-  } else if (!env.EMAIL_ENABLED) {
-    await sendEmail({
-      to: newEmail,
-      subject,
-      text,
-      html,
-      from: { name: inviterName, email: currentEmail },
-    });
+  } else {
+    await sendEmail(message);
   }
 
   await logAuthAudit('email_change.requested', {

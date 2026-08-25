@@ -20,10 +20,6 @@ import { assertCanGrantRoles, resolveTenantScope } from '../admin/adminAuthoriza
 import type { AdminActor } from '../admin/admin.types.js';
 import { setMembershipRoles } from '../memberships/memberships.service.js';
 import { findUserByEmailLookup, findUserById, getUserCredential, toPublicUser } from '../users/users.service.js';
-import {
-  getTenantFromDomain,
-  resolveTenantSmtpTransport,
-} from '../tenant-email/tenantOutboundEmail.service.js';
 import { sendInviteEmail } from './inviteEmail.js';
 import type { AcceptInviteInput, CreateInviteInput } from './invites.schemas.js';
 import { recordTermsAcceptance } from '../terms/termsAcceptance.service.js';
@@ -191,18 +187,12 @@ export async function createInvite(
     inviterPublic?.email ||
     'Administrador';
   const inviterEmail = inviterPublic?.email ?? '';
-  const smtpTransport = await resolveTenantSmtpTransport(tenant.id);
-  const fromDomain = await getTenantFromDomain(tenant.id);
-
   const emailResult = await sendInviteEmail({
     to: email,
     tenantDisplayName,
     invitePath: invitePathForToken(token),
     inviterName,
     inviterEmail,
-    tenantUuid: tenant.id,
-    smtpTransport,
-    fromDomain,
     expiresInDays: loadEnv().INVITE_TTL_DAYS,
   });
 

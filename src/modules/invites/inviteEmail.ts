@@ -1,11 +1,6 @@
 import { getPublicAppBaseUrl, loadEnv } from '../../config/env.js';
-import { sendEmail } from '../email/email.service.js';
+import { getPlatformSender, isPlatformEmailConfigured, sendEmail } from '../email/email.service.js';
 import { renderInviteEmail } from '../email/renderInviteEmail.js';
-import type { SmtpTransportConfig } from '../email/email.types.js';
-import {
-  assertInviterEmailMatchesTenantDomain,
-  markTenantOutboundEmailVerified,
-} from '../tenant-email/tenantOutboundEmail.service.js';
 
 export type SendInviteEmailInput = {
   to: string;
@@ -13,17 +8,18 @@ export type SendInviteEmailInput = {
   invitePath: string;
   inviterName: string;
   inviterEmail: string;
-  tenantUuid: string;
-  smtpTransport: SmtpTransportConfig | null;
-  fromDomain: string | null;
   expiresInDays: number;
 };
 
 export type SendInviteEmailResult = {
   sent: boolean;
-  reason?: 'smtp_not_configured' | 'email_disabled' | 'domain_mismatch' | 'send_failed';
+  reason?: 'email_disabled' | 'smtp_not_configured' | 'send_failed';
 };
 
+/**
+ * O convite sai pelo SMTP da plataforma. O remetente é o nosso endereço — provedor
+ * nenhum aceita enviar como o e-mail do administrador —, e a resposta volta para ele.
+ */
 export async function sendInviteEmail(input: SendInviteEmailInput): Promise<SendInviteEmailResult> {
   const env = loadEnv();
   const baseUrl = getPublicAppBaseUrl(env);
@@ -36,85 +32,30 @@ export async function sendInviteEmail(input: SendInviteEmailInput): Promise<Send
     expiresInDays: input.expiresInDays,
   });
 
+  const sender = getPlatformSender();
+  const message = {
+    to: input.to,
+    subject,
+    text,
+    html,
+    from: { name: `${input.inviterName} via ${sender.name}`, email: sender.email },
+    replyTo: { name: input.inviterName, email: input.inviterEmail },
+  };
+
   if (!env.EMAIL_ENABLED) {
-    await sendEmail({
-      to: input.to,
-      subject,
-      text,
-      html,
-      from: { name: input.inviterName, email: input.inviterEmail },
-      replyTo: { name: input.inviterName, email: input.inviterEmail },
-    });
+    await sendEmail(message);
     return { sent: false, reason: 'email_disabled' };
   }
 
-  if (!input.smtpTransport || !input.fromDomain) {
-    await sendEmail({
-      to: input.to,
-      subject,
-      text,
-      html,
-      from: { name: input.inviterName, email: input.inviterEmail },
-      replyTo: { name: input.inviterName, email: input.inviterEmail },
-    });
+  if (!isPlatformEmailConfigured()) {
+    await sendEmail(message);
     return { sent: false, reason: 'smtp_not_configured' };
   }
 
   try {
-    assertInviterEmailMatchesTenantDomain(input.inviterEmail, input.fromDomain);
-  } catch {
-    return { sent: false, reason: 'domain_mismatch' };
-  }
-
-  try {
-    await sendEmail(
-      {
-        to: input.to,
-        subject,
-        text,
-        html,
-        from: { name: input.inviterName, email: input.inviterEmail },
-        replyTo: { name: input.inviterName, email: input.inviterEmail },
-      },
-      input.smtpTransport,
-    );
-    await markTenantOutboundEmailVerified(input.tenantUuid);
+    await sendEmail(message);
     return { sent: true };
   } catch {
     return { sent: false, reason: 'send_failed' };
   }
-}
-
-export async function sendTenantEmailTest(input: {
-  to: string;
-  inviterName: string;
-  inviterEmail: string;
-  tenantDisplayName: string;
-  smtpTransport: SmtpTransportConfig;
-  fromDomain: string;
-  tenantUuid: string;
-}): Promise<void> {
-  assertInviterEmailMatchesTenantDomain(input.inviterEmail, input.fromDomain);
-
-  const { subject, text, html } = renderInviteEmail({
-    inviterName: input.inviterName,
-    inviterEmail: input.inviterEmail,
-    tenantDisplayName: input.tenantDisplayName,
-    inviteUrl: getPublicAppBaseUrl(loadEnv()),
-    expiresInDays: 7,
-  });
-
-  await sendEmail(
-    {
-      to: input.to,
-      subject: `[Teste] ${subject}`,
-      text: `Este é um e-mail de teste da configuração SMTP da empresa.\n\n${text}`,
-      html: `<p><strong>Este é um e-mail de teste da configuração SMTP da empresa.</strong></p>${html}`,
-      from: { name: input.inviterName, email: input.inviterEmail },
-      replyTo: { name: input.inviterName, email: input.inviterEmail },
-    },
-    input.smtpTransport,
-  );
-
-  await markTenantOutboundEmailVerified(input.tenantUuid);
 }

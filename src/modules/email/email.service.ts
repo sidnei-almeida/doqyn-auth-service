@@ -61,6 +61,15 @@ export async function sendEmail(
   await getEmailSender().send(message);
 }
 
+/** O envio real só acontece com EMAIL_ENABLED e SMTP da plataforma configurado. */
+export function isPlatformEmailConfigured(): boolean {
+  return loadEnv().EMAIL_ENABLED && getFallbackSmtpTransport() !== null;
+}
+
+export function getPlatformSender(): { name: string; email: string } {
+  return { name: 'DOQYN', email: loadEnv().EMAIL_FROM };
+}
+
 export function getFallbackSmtpTransport(): SmtpTransportConfig | null {
   const env = loadEnv();
   if (!env.SMTP_HOST?.trim() || !env.SMTP_USER?.trim() || !env.SMTP_PASSWORD?.trim()) {

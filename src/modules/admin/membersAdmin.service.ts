@@ -527,13 +527,16 @@ export async function unblockMembership(
   return toPublicMembership(updated!);
 }
 
-export async function listAccessRequestsForAdmin(
-  actor: AdminActor,
-  tenantTextId?: string,
-  status?: string,
-) {
-  // Idem: solicitações de acesso são sempre as do tenant da sessão.
-  const tenantFilter: string = resolveTenantScope(actor, tenantTextId);
+/**
+ * As solicitações de um tenant, já serializadas.
+ *
+ * Separado de `listAccessRequestsForAdmin` porque existem dois caminhos legítimos até aqui, com
+ * autenticações diferentes: a sessão de um administrador (que só pode ver o próprio tenant, e por
+ * isso passa por `resolveTenantScope`) e a chave interna do app DOQYN, que já chega com o tenant
+ * resolvido e não tem ator. O que os dois compartilham é esta consulta.
+ */
+export async function listAccessRequestsByTenant(tenantTextId: string, status?: string) {
+  const tenantFilter = tenantTextId;
 
   const requests = await prisma.authAccessRequest.findMany({
     where: {
@@ -579,4 +582,13 @@ export async function listAccessRequestsForAdmin(
       termsAcceptance: termsByRequest.get(request.id) ?? null,
     }),
   );
+}
+
+export async function listAccessRequestsForAdmin(
+  actor: AdminActor,
+  tenantTextId?: string,
+  status?: string,
+) {
+  // Idem: solicitações de acesso são sempre as do tenant da sessão.
+  return listAccessRequestsByTenant(resolveTenantScope(actor, tenantTextId), status);
 }

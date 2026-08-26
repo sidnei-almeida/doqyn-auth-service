@@ -1,4 +1,5 @@
 import { NotFoundError } from '../../utils/errors.js';
+import { listAccessRequestsByTenant } from '../admin/membersAdmin.service.js';
 import { decryptField } from '../../security/crypto.js';
 import { prisma } from '../../db/prisma.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
@@ -151,6 +152,22 @@ export type InternalTenantMemberSnapshot = {
   createdAt: string;
   updatedAt: string;
 };
+
+/**
+ * Solicitações de acesso de um tenant, para o app DOQYN montar a fila de pendências.
+ *
+ * O SPA pedia isto direto ao auth-service, do navegador, batendo em `/auth/admin/access-requests`
+ * com a sessão do usuário — o que obrigava a fila a ser remendada no cliente, fundindo três
+ * origens. Aqui a mesma consulta sai por chave interna, e a fusão passa a acontecer no servidor
+ * do app.
+ */
+export async function internalListTenantAccessRequests(tenantTextId: string, status?: string) {
+  const tenant = await findTenantByTextId(tenantTextId);
+  if (!tenant) {
+    throw new NotFoundError('Tenant não encontrado.');
+  }
+  return listAccessRequestsByTenant(tenantTextId, status);
+}
 
 export async function internalListTenantMembers(
   tenantTextId: string,

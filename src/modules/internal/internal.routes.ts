@@ -20,6 +20,7 @@ import {
   internalGetTenantAccessGroups,
   internalGetUserAvatarMetadata,
   internalGetUserOrThrow,
+  internalListTenantAccessRequests,
   internalListTenantMembers,
   internalUpdateUserAvatarMetadata,
   internalVerifySession,
@@ -168,6 +169,13 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
     const tenantId = (request.params as { tenantId: string }).tenantId;
     const members = await internalListTenantMembers(tenantId);
     return reply.send({ ok: true, members });
+  });
+
+  app.get('/internal/tenants/:tenantId/access-requests', async (request, reply) => {
+    const tenantId = (request.params as { tenantId: string }).tenantId;
+    const status = (request.query as { status?: string }).status;
+    const requests = await internalListTenantAccessRequests(tenantId, status);
+    return reply.send({ ok: true, requests });
   });
 
   app.get('/internal/memberships/:membershipId', async (request, reply) => {

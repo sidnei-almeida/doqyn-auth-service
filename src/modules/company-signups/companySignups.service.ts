@@ -15,11 +15,8 @@ import { recordTermsAcceptance } from '../terms/termsAcceptance.service.js';
 import type { PublicMembership } from '../memberships/memberships.schemas.js';
 import { buildSessionContext } from '../memberships/sessionContext.service.js';
 import type { PublicUser } from '../users/users.schemas.js';
-import { toPublicUser } from '../users/users.service.js';
-import type {
-  CompanySignupAttachInput,
-  CompanySignupInput,
-} from './companySignups.schemas.js';
+import { claimUsername, toPublicUser } from '../users/users.service.js';
+import type { CompanySignupAttachInput, CompanySignupInput } from './companySignups.schemas.js';
 import {
   assertUserCanAttachTenant,
   finalizeSignupProvisioning,
@@ -125,6 +122,9 @@ export async function submitCompanySignup(
         ? await tx.authUser.update({ where: { id: attachToUserId }, data: profile })
         : await tx.authUser.create({
             data: {
+              // Toda conta nasce com apelido: sem ele, ela ficaria invisível ao diretório para
+              // sempre, inclusive para quem quisesse ser achado depois.
+              username: await claimUsername(tx, input.username, email!),
               emailEncrypted: encryptField(email!),
               emailLookupHash: emailLookupHash!,
               ...profile,

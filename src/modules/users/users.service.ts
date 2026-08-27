@@ -1,12 +1,9 @@
 import type { AuthUser, AuthUserStatus } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
-import {
-  decryptField,
-  encryptField,
-  hashLookup,
-} from '../../security/crypto.js';
+import { decryptField, encryptField, hashLookup } from '../../security/crypto.js';
 import { hashPassword } from '../../security/password.js';
 import { normalizeEmail, normalizePhone } from '../../utils/normalize.js';
+import { normalizeUsername, suggestUsernameFromEmail, validateUsernameShape } from './username.js';
 import type { PublicUser } from './users.schemas.js';
 
 export function toPublicUser(user: AuthUser): PublicUser {
@@ -22,9 +19,7 @@ export function toPublicUser(user: AuthUser): PublicUser {
     avatarVersion: user.avatarVersion ?? 0,
     ...(user.avatarUpdatedAt ? { avatarUpdatedAt: user.avatarUpdatedAt.toISOString() } : {}),
     avatarStatus:
-      user.avatarStatus === 'active' || user.avatarStatus === 'removed'
-        ? user.avatarStatus
-        : null,
+      user.avatarStatus === 'active' || user.avatarStatus === 'removed' ? user.avatarStatus : null,
   };
 }
 
@@ -34,6 +29,8 @@ export interface CreateUserInput {
   lastName?: string;
   whatsapp?: string;
   temporaryPassword?: string;
+  /** O apelido escolhido no cadastro. Ausente, um é derivado do e-mail. */
+  username?: string;
 }
 
 export async function findUserByEmailLookup(email: string): Promise<AuthUser | null> {
@@ -44,6 +41,37 @@ export async function findUserByEmailLookup(email: string): Promise<AuthUser | n
 
 export async function findUserById(id: string): Promise<AuthUser | null> {
   return prisma.authUser.findUnique({ where: { id } });
+}
+
+/**
+ * Garante que toda conta nasça com apelido, escolhido ou derivado.
+ *
+ * Ninguém pode ficar sem: o apelido é o identificador estável do diretório, e uma conta sem ele
+ * seria invisível para sempre à busca — inclusive para quem quisesse ser achado depois.
+ *
+ * Colidir é normal, e não é erro de quem cadastra: duas empresas têm o seu `financeiro`. O sufixo
+ * numérico resolve na hora, e o handle continua trocável.
+ */
+export async function claimUsername(
+  tx: Pick<typeof prisma, 'authUser'>,
+  chosen: string | undefined,
+  email: string,
+): Promise<string> {
+  const desired = chosen?.trim() ? normalizeUsername(chosen) : suggestUsernameFromEmail(email);
+
+  const base = validateUsernameShape(desired) ? suggestUsernameFromEmail(email) : desired;
+
+  const free = await tx.authUser.findUnique({ where: { username: base } });
+  if (!free) return base;
+
+  for (let suffix = 2; suffix < 1000; suffix += 1) {
+    const candidate = `${base.slice(0, 28)}${suffix}`;
+    const busy = await tx.authUser.findUnique({ where: { username: candidate } });
+    if (!busy) return candidate;
+  }
+
+  // Mil colisões no mesmo prefixo não acontece por acaso; falhar aqui é melhor que gravar lixo.
+  throw new Error(`sem apelido livre para "${base}"`);
 }
 
 export async function createOrGetUser(input: CreateUserInput): Promise<PublicUser> {
@@ -66,6 +94,7 @@ export async function createOrGetUser(input: CreateUserInput): Promise<PublicUse
         lastNameEncrypted: input.lastName ? encryptField(input.lastName) : null,
         whatsappEncrypted: whatsappNormalized ? encryptField(whatsappNormalized) : null,
         whatsappLookupHash: whatsappNormalized ? hashLookup(whatsappNormalized) : null,
+        username: await claimUsername(tx, input.username, normalizedEmail),
         status: 'active',
       },
     });

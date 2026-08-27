@@ -11,9 +11,7 @@ export interface PasswordResetRequestResult {
   userId?: string;
 }
 
-export async function requestPasswordReset(
-  email: string,
-): Promise<PasswordResetRequestResult> {
+export async function requestPasswordReset(email: string): Promise<PasswordResetRequestResult> {
   const user = await findUserByEmailLookup(email);
   if (!user) {
     return {};

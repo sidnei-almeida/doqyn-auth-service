@@ -21,7 +21,10 @@ import {
   validateSessionByToken,
 } from '../sessions/sessions.service.js';
 import type { PublicUser } from '../users/users.schemas.js';
-import { buildSessionContext, getSessionRecordByToken } from '../memberships/sessionContext.service.js';
+import {
+  buildSessionContext,
+  getSessionRecordByToken,
+} from '../memberships/sessionContext.service.js';
 import type { SessionContext } from '../memberships/memberships.schemas.js';
 import {
   findUserByEmailLookup,
@@ -33,8 +36,7 @@ import type { AuthErrorCode } from '../../utils/authErrorCodes.js';
 import { AUTH_ERROR_MESSAGES } from '../../utils/authErrorCodes.js';
 import { resolveMembershipAccessError } from '../../utils/membershipAccessErrors.js';
 import type { LoginInput } from './auth.schemas.js';
-const GENERIC_RESET_MESSAGE =
-  'Se o e-mail existir, enviaremos instruções para redefinir a senha.';
+const GENERIC_RESET_MESSAGE = 'Se o e-mail existir, enviaremos instruções para redefinir a senha.';
 
 async function recordLoginAttempt(
   emailLookupHash: string | null,
@@ -161,9 +163,8 @@ export async function login(
 
   // Auto-retry: tenant stuck em provisioning_failed (ex.: Mongo estava offline no signup).
   if (activeMemberships.length === 0 && visibleMemberships.length > 0) {
-    const { retryProvisioningForUserMemberships } = await import(
-      '../../integrations/provisionRetry.js'
-    );
+    const { retryProvisioningForUserMemberships } =
+      await import('../../integrations/provisionRetry.js');
     const recovered = await retryProvisioningForUserMemberships(visibleMemberships);
     if (recovered) {
       memberships = await listUserMemberships(user.id);
@@ -221,10 +222,7 @@ export async function login(
   };
 }
 
-export async function logout(
-  sessionToken: string | undefined,
-  ctx: RequestContext,
-): Promise<void> {
+export async function logout(sessionToken: string | undefined, ctx: RequestContext): Promise<void> {
   if (!sessionToken) {
     return;
   }
@@ -245,7 +243,7 @@ export async function logout(
 
 export async function getSession(
   sessionToken: string | undefined,
-): Promise<SessionContext & { ok: true } | { ok: false; code: string }> {
+): Promise<(SessionContext & { ok: true }) | { ok: false; code: string }> {
   if (!sessionToken) {
     return { ok: false, code: 'NO_SESSION' };
   }

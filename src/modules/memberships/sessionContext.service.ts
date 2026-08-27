@@ -38,9 +38,7 @@ export async function buildSessionContext(
   activeMembershipId?: string | null,
 ): Promise<SessionContext> {
   const memberships = await listUserMemberships(user.id);
-  const summaries = memberships
-    .filter((m) => m.status !== 'removed')
-    .map(toMembershipSummary);
+  const summaries = memberships.filter((m) => m.status !== 'removed').map(toMembershipSummary);
 
   let activeMembership: PublicMembership | null = null;
 

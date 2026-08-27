@@ -97,10 +97,7 @@ function sanitizeMetadata(metadata?: Record<string, unknown>): Record<string, un
   return sanitized;
 }
 
-export async function logAuthAudit(
-  action: AuditAction,
-  context: AuditContext = {},
-): Promise<void> {
+export async function logAuthAudit(action: AuditAction, context: AuditContext = {}): Promise<void> {
   const metadata = sanitizeMetadata(context.metadata);
   safeLog(`audit:${action}`, {
     userId: context.userId,

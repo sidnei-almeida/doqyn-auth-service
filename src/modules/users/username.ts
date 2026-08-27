@@ -39,12 +39,7 @@ export function normalizeUsername(raw: string): string {
     .replace(/[^a-z0-9._-]/g, '');
 }
 
-export type UsernameProblem =
-  | 'too_short'
-  | 'too_long'
-  | 'invalid_shape'
-  | 'reserved'
-  | 'taken';
+export type UsernameProblem = 'too_short' | 'too_long' | 'invalid_shape' | 'reserved' | 'taken';
 
 export function validateUsernameShape(username: string): UsernameProblem | null {
   if (username.length < MIN_LENGTH) return 'too_short';

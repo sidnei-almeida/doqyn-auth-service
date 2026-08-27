@@ -11,10 +11,7 @@ import {
   type PublicAccessGroup,
 } from '../access-groups/accessGroups.service.js';
 import { auditCtx, logAuthAudit } from '../audit/authAudit.service.js';
-import {
-  assertAdminActor,
-  resolveTenantScope,
-} from './adminAuthorization.js';
+import { assertAdminActor, resolveTenantScope } from './adminAuthorization.js';
 import type { AdminActor } from './admin.types.js';
 
 export type { AdminActor } from './admin.types.js';

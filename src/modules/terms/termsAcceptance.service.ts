@@ -46,7 +46,8 @@ export async function getLatestTermsAcceptanceForAccessRequest(accessRequestId: 
 }
 
 export async function listTermsAcceptancesForAccessRequests(accessRequestIds: string[]) {
-  if (accessRequestIds.length === 0) return new Map<string, Prisma.AuthTermsAcceptanceGetPayload<object>>();
+  if (accessRequestIds.length === 0)
+    return new Map<string, Prisma.AuthTermsAcceptanceGetPayload<object>>();
 
   const rows = await prisma.authTermsAcceptance.findMany({
     where: { accessRequestId: { in: accessRequestIds } },

@@ -1,3 +1,4 @@
+import { claimUsername } from '../users/users.service.js';
 import { prisma } from '../../db/prisma.js';
 import { decryptField, encryptField, hashLookup } from '../../security/crypto.js';
 import { hashPassword } from '../../security/password.js';
@@ -60,9 +61,7 @@ export async function submitAccessRequest(
   }
 
   if (tenant.status !== 'active') {
-    throw new TenantNotActiveError(
-      'Esta empresa ainda não está disponível para novos acessos.',
-    );
+    throw new TenantNotActiveError('Esta empresa ainda não está disponível para novos acessos.');
   }
 
   const tenantDisplayName =
@@ -76,6 +75,7 @@ export async function submitAccessRequest(
     if (!user) {
       user = await tx.authUser.create({
         data: {
+          username: await claimUsername(tx, input.username, email),
           emailEncrypted: encryptField(email),
           emailLookupHash,
           firstNameEncrypted: encryptField(input.firstName),

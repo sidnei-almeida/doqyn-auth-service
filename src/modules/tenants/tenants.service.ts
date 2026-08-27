@@ -1,12 +1,7 @@
 import type { AuthTenant, TenantStatus, TenantType } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { decryptField, encryptField, hashLookup } from '../../security/crypto.js';
-import {
-  detectTaxIdType,
-  maskTaxId,
-  normalizeTaxId,
-  slugify,
-} from '../../utils/normalize.js';
+import { detectTaxIdType, maskTaxId, normalizeTaxId, slugify } from '../../utils/normalize.js';
 
 export interface PublicTenant {
   id: string;
@@ -24,9 +19,7 @@ export function toPublicTenant(tenant: AuthTenant): PublicTenant {
     id: tenant.id,
     tenantId: tenant.tenantId,
     tenantType: tenant.tenantType,
-    displayName: tenant.displayNameEncrypted
-      ? decryptField(tenant.displayNameEncrypted)
-      : null,
+    displayName: tenant.displayNameEncrypted ? decryptField(tenant.displayNameEncrypted) : null,
     slug: tenant.slug,
     taxIdType: tenant.taxIdType,
     taxIdMasked: tenant.taxIdMasked,

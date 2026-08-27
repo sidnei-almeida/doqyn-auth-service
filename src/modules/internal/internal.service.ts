@@ -74,7 +74,10 @@ function toDirectoryUser(user: {
 }): DirectoryUser {
   const first = user.firstNameEncrypted ? decryptField(user.firstNameEncrypted) : '';
   const last = user.lastNameEncrypted ? decryptField(user.lastNameEncrypted) : '';
-  const displayName = [first, last].map((part) => part.trim()).filter(Boolean).join(' ');
+  const displayName = [first, last]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(' ');
 
   return { id: user.id, displayName };
 }
@@ -180,10 +183,10 @@ export async function internalUpdateUserAvatarMetadata(
   }
 
   const user = await updateUserAvatarMetadata(userId, input);
-  await logAuthAudit(
-    input.status === 'removed' ? 'user.avatar_removed' : 'user.avatar_updated',
-    { userId, metadata: { version: input.version } },
-  );
+  await logAuthAudit(input.status === 'removed' ? 'user.avatar_removed' : 'user.avatar_updated', {
+    userId,
+    metadata: { version: input.version },
+  });
   return user;
 }
 

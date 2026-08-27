@@ -21,9 +21,7 @@ type MembershipWithRelations = AuthMembership & {
 export function getActiveAccessGroupIds(
   links: MembershipWithRelations['accessGroupLinks'],
 ): string[] {
-  return links
-    .filter((l) => l.accessGroup.status === 'active')
-    .map((l) => l.accessGroup.groupId);
+  return links.filter((l) => l.accessGroup.status === 'active').map((l) => l.accessGroup.groupId);
 }
 
 export function toPublicMembership(membership: MembershipWithRelations): PublicMembership {
@@ -93,10 +91,7 @@ export async function createDefaultNotificationPreferences(membershipId: string)
   });
 }
 
-export async function setMembershipRoles(
-  membershipId: string,
-  roles: TenantRole[],
-): Promise<void> {
+export async function setMembershipRoles(membershipId: string, roles: TenantRole[]): Promise<void> {
   await prisma.$transaction(async (tx) => {
     await tx.authMembershipRole.deleteMany({ where: { membershipId } });
     if (roles.length > 0) {

@@ -11,10 +11,7 @@ import {
   serializeAdminAccessRequest,
 } from '../access-requests/accessRequests.admin.js';
 import { listTermsAcceptancesForAccessRequests } from '../terms/termsAcceptance.service.js';
-import {
-  auditCtx,
-  logAuthAudit,
-} from '../audit/authAudit.service.js';
+import { auditCtx, logAuthAudit } from '../audit/authAudit.service.js';
 import type { PublicMembership, MemberDetailResponse } from '../memberships/memberships.schemas.js';
 import {
   findMembershipById,
@@ -83,8 +80,12 @@ async function filterBySearch<T extends { userId: string }>(
     const user = await findUserById(m.userId);
     if (!user) continue;
     const email = decryptField(user.emailEncrypted).toLowerCase();
-    const firstName = user.firstNameEncrypted ? decryptField(user.firstNameEncrypted).toLowerCase() : '';
-    const lastName = user.lastNameEncrypted ? decryptField(user.lastNameEncrypted).toLowerCase() : '';
+    const firstName = user.firstNameEncrypted
+      ? decryptField(user.firstNameEncrypted).toLowerCase()
+      : '';
+    const lastName = user.lastNameEncrypted
+      ? decryptField(user.lastNameEncrypted).toLowerCase()
+      : '';
     if (email.includes(q) || firstName.includes(q) || lastName.includes(q)) {
       results.push(m);
     }
@@ -123,9 +124,7 @@ export async function listMembers(
     ...(tenantUuid ? { tenantId: tenantUuid } : {}),
     ...(filters.status ? { status: filters.status } : {}),
     ...(filters.role ? { roles: { some: { role: filters.role } } } : {}),
-    ...(accessGroupUuid
-      ? { accessGroupLinks: { some: { accessGroupId: accessGroupUuid } } }
-      : {}),
+    ...(accessGroupUuid ? { accessGroupLinks: { some: { accessGroupId: accessGroupUuid } } } : {}),
   };
 
   let all = await prisma.authMembership.findMany({
@@ -577,7 +576,7 @@ export async function listAccessRequestsByTenant(tenantTextId: string, status?: 
         ? decryptField(request.tenant.displayNameEncrypted)
         : null,
       notificationPreferences: request.membershipId
-        ? prefsByMembership.get(request.membershipId) ?? null
+        ? (prefsByMembership.get(request.membershipId) ?? null)
         : null,
       termsAcceptance: termsByRequest.get(request.id) ?? null,
     }),

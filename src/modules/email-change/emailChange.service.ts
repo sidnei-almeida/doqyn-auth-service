@@ -1,18 +1,18 @@
 import { prisma } from '../../db/prisma.js';
 import { getPublicAppBaseUrl, isProduction, loadEnv } from '../../config/env.js';
-import { decryptField, encryptField, hashEmailChangeToken, hashLookup } from '../../security/crypto.js';
+import {
+  decryptField,
+  encryptField,
+  hashEmailChangeToken,
+  hashLookup,
+} from '../../security/crypto.js';
 import { verifyPassword } from '../../security/password.js';
 import { generateEmailChangeToken } from '../../security/sessionToken.js';
 import {
   checkEmailChangeConfirmRateLimit,
   checkEmailChangeRequestRateLimit,
 } from '../../security/rateLimit.js';
-import {
-  ConflictError,
-  GoneError,
-  NotFoundError,
-  ValidationError,
-} from '../../utils/errors.js';
+import { ConflictError, GoneError, NotFoundError, ValidationError } from '../../utils/errors.js';
 import { normalizeEmail } from '../../utils/normalize.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
 import { getPlatformSender, isPlatformEmailConfigured, sendEmail } from '../email/email.service.js';
@@ -92,7 +92,6 @@ export async function requestEmailChange(
   if (duplicate && duplicate.id !== userId) {
     throw new ConflictError('Este e-mail já está em uso.', 'EMAIL_ALREADY_EXISTS');
   }
-
 
   await invalidatePendingEmailChanges(userId);
 

@@ -8,18 +8,18 @@ import {
   checkInviteAcceptRateLimit,
   checkInviteCreateRateLimit,
 } from '../../security/rateLimit.js';
-import {
-  ConflictError,
-  GoneError,
-  NotFoundError,
-  ValidationError,
-} from '../../utils/errors.js';
+import { ConflictError, GoneError, NotFoundError, ValidationError } from '../../utils/errors.js';
 import { normalizeEmail, normalizePhone } from '../../utils/normalize.js';
 import { auditCtx, logAuthAudit } from '../audit/authAudit.service.js';
 import { assertCanGrantRoles, resolveTenantScope } from '../admin/adminAuthorization.js';
 import type { AdminActor } from '../admin/admin.types.js';
 import { setMembershipRoles } from '../memberships/memberships.service.js';
-import { findUserByEmailLookup, findUserById, getUserCredential, toPublicUser } from '../users/users.service.js';
+import {
+  findUserByEmailLookup,
+  findUserById,
+  getUserCredential,
+  toPublicUser,
+} from '../users/users.service.js';
 import { sendInviteEmail } from './inviteEmail.js';
 import type { AcceptInviteInput, CreateInviteInput } from './invites.schemas.js';
 import { recordTermsAcceptance } from '../terms/termsAcceptance.service.js';
@@ -80,11 +80,7 @@ async function findInviteByToken(token: string) {
   });
 }
 
-export async function createInvite(
-  actor: AdminActor,
-  input: CreateInviteInput,
-  ipHash?: string,
-) {
+export async function createInvite(actor: AdminActor, input: CreateInviteInput, ipHash?: string) {
   if (ipHash) {
     await checkInviteCreateRateLimit(ipHash);
   }
@@ -95,9 +91,7 @@ export async function createInvite(
 
   const tenant = await getTenantUuid(actor, input.tenantId);
   const emailLookupHash = hashLookup(email);
-  const expiresAt = new Date(
-    Date.now() + loadEnv().INVITE_TTL_DAYS * 24 * 60 * 60 * 1000,
-  );
+  const expiresAt = new Date(Date.now() + loadEnv().INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
   const token = generateInviteToken();
   const tokenHash = hashInviteToken(token);
   const firstName = input.firstName?.trim() || '';

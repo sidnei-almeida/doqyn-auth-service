@@ -51,10 +51,7 @@ function verifyInternalApiKey(request: FastifyRequest): void {
   }
 }
 
-async function internalAuthHook(
-  request: FastifyRequest,
-  _reply: FastifyReply,
-): Promise<void> {
+async function internalAuthHook(request: FastifyRequest, _reply: FastifyReply): Promise<void> {
   verifyInternalApiKey(request);
 }
 
@@ -120,10 +117,7 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const limit = Number.parseInt(query.limit ?? '8', 10);
-    const users = await internalSearchUsersByUsername(
-      prefix,
-      Number.isFinite(limit) ? limit : 8,
-    );
+    const users = await internalSearchUsersByUsername(prefix, Number.isFinite(limit) ? limit : 8);
 
     return reply.send({ ok: true, users });
   });

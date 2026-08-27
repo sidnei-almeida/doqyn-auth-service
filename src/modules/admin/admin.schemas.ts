@@ -26,11 +26,7 @@ export const rejectMembershipSchema = z.object({
 });
 
 export const blockMembershipSchema = z.object({
-  reason: z
-    .string()
-    .trim()
-    .max(300, 'O motivo deve ter no máximo 300 caracteres.')
-    .optional(),
+  reason: z.string().trim().max(300, 'O motivo deve ter no máximo 300 caracteres.').optional(),
   notifyUser: z.boolean().optional().default(false),
 });
 

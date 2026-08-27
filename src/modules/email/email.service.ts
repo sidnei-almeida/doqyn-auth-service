@@ -9,7 +9,11 @@ export class ConsoleEmailSender implements EmailSender {
     if (env.NODE_ENV === 'test') return;
     console.info('[email] queued', {
       to: redactEmail(message.to),
-      from: message.from ? redactEmail(message.from.email) : transport?.user ? redactEmail(transport.user) : undefined,
+      from: message.from
+        ? redactEmail(message.from.email)
+        : transport?.user
+          ? redactEmail(transport.user)
+          : undefined,
       subject: message.subject,
       textLength: message.text.length,
       transportHost: transport?.host,

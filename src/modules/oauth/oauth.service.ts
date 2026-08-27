@@ -149,7 +149,11 @@ export async function completeOAuthCallback(input: {
       };
     }
 
-    const session = await createSession(resolved.user.id, input.ctx.ipHash, input.ctx.userAgentHash);
+    const session = await createSession(
+      resolved.user.id,
+      input.ctx.ipHash,
+      input.ctx.userAgentHash,
+    );
 
     await prisma.authUser.update({
       where: { id: resolved.user.id },
@@ -229,7 +233,8 @@ export async function completeOAuthCallback(input: {
         ok: false,
         status: 'error',
         code: 'OAUTH_EMAIL_NOT_VERIFIED',
-        message: 'Não foi possível vincular a conta porque o e-mail do provedor não está verificado.',
+        message:
+          'Não foi possível vincular a conta porque o e-mail do provedor não está verificado.',
       };
     }
 
@@ -247,9 +252,7 @@ export function buildOAuthFrontendRedirect(input: {
   returnUrl?: string;
 }): string {
   const env = loadEnv();
-  const base = input.result.ok
-    ? env.OAUTH_POST_LOGIN_REDIRECT_URL
-    : env.OAUTH_ERROR_REDIRECT_URL;
+  const base = input.result.ok ? env.OAUTH_POST_LOGIN_REDIRECT_URL : env.OAUTH_ERROR_REDIRECT_URL;
 
   const url = new URL(base);
 

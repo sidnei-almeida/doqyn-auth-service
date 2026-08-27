@@ -8,6 +8,14 @@ const companySignupBaseFields = {
   ...signupCountryFields,
   taxId: z.string().min(1, 'Informe o documento fiscal.'),
   firstName: z.string().min(1, 'Informe o nome do responsável.'),
+  /**
+   * O apelido, escolhido aqui e não depois.
+   *
+   * Opcional de propósito: quem não escolher recebe um derivado do e-mail, porque conta sem
+   * apelido fica invisível ao diretório para sempre. Pedir aqui é o que dá à pessoa a chance de
+   * ser encontrada pelo nome que ela quer.
+   */
+  username: z.string().trim().max(32).optional(),
   lastName: z.string().min(1, 'Informe o sobrenome do responsável.'),
   whatsapp: z.string().min(8, 'Informe um WhatsApp válido.'),
   ...termsAcceptanceFields,

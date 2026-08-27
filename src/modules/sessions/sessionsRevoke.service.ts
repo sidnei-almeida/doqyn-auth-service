@@ -28,7 +28,10 @@ export async function revokeSessionByToken(token: string): Promise<boolean> {
   return true;
 }
 
-export async function revokeUserSessionsForTenant(userId: string, tenantUuid: string): Promise<number> {
+export async function revokeUserSessionsForTenant(
+  userId: string,
+  tenantUuid: string,
+): Promise<number> {
   const memberships = await prisma.authMembership.findMany({
     where: { userId, tenantId: tenantUuid },
     select: { id: true },

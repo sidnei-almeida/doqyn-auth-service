@@ -1,3 +1,4 @@
+import { claimUsername } from '../users/users.service.js';
 import type { CountryCode } from 'libphonenumber-js/min';
 import { prisma } from '../../db/prisma.js';
 import { encryptField, hashLookup } from '../../security/crypto.js';
@@ -130,6 +131,9 @@ export async function submitIndividualSignup(
         ? await tx.authUser.update({ where: { id: attachToUserId }, data: profile })
         : await tx.authUser.create({
             data: {
+              // Toda conta nasce com apelido: sem ele, ela ficaria invisível ao diretório para
+              // sempre, inclusive para quem quisesse ser achado depois.
+              username: await claimUsername(tx, input.username, email!),
               emailEncrypted: encryptField(email!),
               emailLookupHash: emailLookupHash!,
               ...profile,

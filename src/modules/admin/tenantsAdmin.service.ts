@@ -3,10 +3,7 @@ import { prisma } from '../../db/prisma.js';
 import { decryptField } from '../../security/crypto.js';
 import { ConflictError, NotFoundError } from '../../utils/errors.js';
 import { auditCtx, logAuthAudit } from '../audit/authAudit.service.js';
-import {
-  findMembershipById,
-  setMembershipRoles,
-} from '../memberships/memberships.service.js';
+import { findMembershipById, setMembershipRoles } from '../memberships/memberships.service.js';
 import { revokeAllTenantSessions } from '../sessions/sessionsRevoke.service.js';
 import {
   createTenant,
@@ -14,10 +11,7 @@ import {
   toPublicTenant,
   type PublicTenant,
 } from '../tenants/tenants.service.js';
-import {
-  assertPlatformOperation,
-  assertLastAdminProtection,
-} from './adminAuthorization.js';
+import { assertPlatformOperation, assertLastAdminProtection } from './adminAuthorization.js';
 import type { AdminActor } from './admin.types.js';
 import type { PaginatedResult } from './membersAdmin.service.js';
 
@@ -145,11 +139,7 @@ export async function updateTenantAdmin(
     where: { id: tenant.id },
     data: {
       displayNameEncrypted:
-        displayName !== undefined
-          ? displayName
-            ? encryptField(displayName)
-            : null
-          : undefined,
+        displayName !== undefined ? (displayName ? encryptField(displayName) : null) : undefined,
       displayNameLookupHash:
         displayName !== undefined
           ? displayName
@@ -267,7 +257,11 @@ export async function transferAdmin(
     throw new ConflictError('Membership de origem não possui role de admin.');
   }
 
-  await assertLastAdminProtection(tenant.id, fromMembershipId, fromRoles.filter((r) => r !== adminRole));
+  await assertLastAdminProtection(
+    tenant.id,
+    fromMembershipId,
+    fromRoles.filter((r) => r !== adminRole),
+  );
 
   const toRoles = to.roles.map((r) => r.role);
   const newToRoles = toRoles.includes(adminRole) ? toRoles : [...toRoles, adminRole];

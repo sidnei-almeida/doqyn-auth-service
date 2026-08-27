@@ -52,6 +52,54 @@ export async function internalFindUserByEmail(email: string): Promise<PublicUser
   return user ? toPublicUser(user) : null;
 }
 
+/**
+ * O que o diretório DOQYN devolve sobre alguém de outra empresa.
+ *
+ * Projeção própria, e **não** `toPublicUser`: aquela devolve whatsapp, e-mail e status de
+ * verificação. Entregá-la a uma busca entre empresas faria de "sei o e-mail dessa pessoa" um
+ * caminho para "sei o telefone dela".
+ *
+ * Match exato pelo `emailLookupHash` — o nome está cifrado sem chave de busca, e hash
+ * determinístico não responde prefixo. Sem `contains`, sem sugestão, sem "você quis dizer".
+ */
+export type DirectoryUser = {
+  id: string;
+  displayName: string;
+};
+
+function toDirectoryUser(user: {
+  id: string;
+  firstNameEncrypted: string | null;
+  lastNameEncrypted: string | null;
+}): DirectoryUser {
+  const first = user.firstNameEncrypted ? decryptField(user.firstNameEncrypted) : '';
+  const last = user.lastNameEncrypted ? decryptField(user.lastNameEncrypted) : '';
+  const displayName = [first, last].map((part) => part.trim()).filter(Boolean).join(' ');
+
+  return { id: user.id, displayName };
+}
+
+/**
+ * Resposta uniforme, de propósito.
+ *
+ * "Não existe", "existe mas está desativado" e — quando houver preferência de visibilidade —
+ * "existe mas não quer ser achado" respondem a mesma coisa. Diferenciar qualquer um deles
+ * transformaria o lookup num oráculo: dá para varrer uma lista de e-mails e descobrir quem tem
+ * conta aqui.
+ *
+ * O limite por quem consulta não mora aqui: esta rota é chamada com a chave interna do Alpha, que
+ * é quem conhece a sessão. O teto por usuário fica do lado dele.
+ */
+export async function internalLookupUserByEmail(email: string): Promise<DirectoryUser | null> {
+  const user = await findUserByEmailLookup(email);
+
+  if (!user || user.status !== 'active') {
+    return null;
+  }
+
+  return toDirectoryUser(user);
+}
+
 export async function internalVerifySession(sessionToken: string) {
   const result = await validateSessionByToken(sessionToken);
   if (!result.valid) {

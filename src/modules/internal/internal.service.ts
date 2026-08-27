@@ -100,6 +100,20 @@ export async function internalLookupUserByEmail(email: string): Promise<Director
   return toDirectoryUser(user);
 }
 
+/**
+ * A busca navegável do diretório, por prefixo de handle.
+ *
+ * A projeção é a mesma do lookup por e-mail — id, nome de exibição e agora o handle — e por
+ * simetria: quem acha pela busca não pode receber mais do que quem já sabia o e-mail.
+ */
+export async function internalSearchUsersByUsername(
+  prefix: string,
+  limit?: number,
+): Promise<Array<{ id: string; username: string; displayName: string }>> {
+  const { searchUsersByUsernamePrefix } = await import('../users/users.service.js');
+  return searchUsersByUsernamePrefix(prefix, limit);
+}
+
 export async function internalVerifySession(sessionToken: string) {
   const result = await validateSessionByToken(sessionToken);
   if (!result.valid) {

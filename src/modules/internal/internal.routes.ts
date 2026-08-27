@@ -23,6 +23,7 @@ import {
   internalListTenantAccessRequests,
   internalListTenantMembers,
   internalLookupUserByEmail,
+  internalSearchUsersByUsername,
   internalUpdateUserAvatarMetadata,
   internalVerifySession,
 } from './internal.service.js';
@@ -100,6 +101,33 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
    * separa. O 404 diria "esse e-mail não é usuário" com o status HTTP, que é justamente o que a
    * resposta uniforme existe para não dizer de graça.
    */
+  /**
+   * A busca navegável: prefixo de handle.
+   *
+   * Mínimo de dois caracteres, e teto de resultados. Um prefixo de uma letra devolveria um pedaço
+   * grande do diretório a cada tecla — e enumerar o cadastro inteiro em 26 chamadas é o mesmo
+   * oráculo que a resposta uniforme do lookup existe para evitar.
+   *
+   * O teto por quem consulta não mora aqui: esta rota é chamada com a chave interna do Alpha, que
+   * é quem conhece a sessão.
+   */
+  app.get('/internal/users/search', async (request, reply) => {
+    const query = request.query as { q?: string; limit?: string };
+    const prefix = (query.q ?? '').trim();
+
+    if (prefix.length < 2) {
+      return reply.send({ ok: true, users: [] });
+    }
+
+    const limit = Number.parseInt(query.limit ?? '8', 10);
+    const users = await internalSearchUsersByUsername(
+      prefix,
+      Number.isFinite(limit) ? limit : 8,
+    );
+
+    return reply.send({ ok: true, users });
+  });
+
   app.get('/internal/users/lookup', async (request, reply) => {
     const query = request.query as { email?: string };
     const parsed = emailParamSchema.safeParse({ email: query.email?.trim() ?? '' });

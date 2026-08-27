@@ -198,3 +198,52 @@ export async function getUserAvatarMetadata(userId: string): Promise<{
     status: user.avatarStatus,
   };
 }
+
+/**
+ * Busca por prefixo de handle, entre empresas.
+ *
+ * É o **único** caminho de busca digitável que o schema permite: nome está cifrado e e-mail só tem
+ * hash determinístico, e nenhum dos dois responde prefixo. O handle existe exatamente para isto.
+ *
+ * `usernameDiscoverable` é a linha entre ter identificador e estar num diretório. Quem se retirou
+ * some da busca sem perder o handle — e some do mesmo jeito que quem não existe, porque uma
+ * resposta diferente contaria que ele existe.
+ */
+export async function searchUsersByUsernamePrefix(
+  prefix: string,
+  limit = 8,
+): Promise<Array<{ id: string; username: string; displayName: string }>> {
+  const normalized = prefix.trim().toLowerCase();
+  if (normalized.length < 2) return [];
+
+  const users = await prisma.authUser.findMany({
+    where: {
+      username: { startsWith: normalized },
+      usernameDiscoverable: true,
+      status: 'active',
+    },
+    select: { id: true, username: true, firstNameEncrypted: true, lastNameEncrypted: true },
+    orderBy: { username: 'asc' },
+    take: Math.min(Math.max(limit, 1), 20),
+  });
+
+  return users.map((user) => ({
+    id: user.id,
+    username: user.username ?? '',
+    // O nome de exibição só é decifrado **depois** do filtro: o que decide quem aparece é o
+    // handle, e nunca o campo cifrado.
+    displayName: [
+      user.firstNameEncrypted ? decryptField(user.firstNameEncrypted) : '',
+      user.lastNameEncrypted ? decryptField(user.lastNameEncrypted) : '',
+    ]
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(' '),
+  }));
+}
+
+/** O handle está livre? Reservado e formato inválido contam como ocupado para quem escolhe. */
+export async function isUsernameAvailable(username: string): Promise<boolean> {
+  const existing = await prisma.authUser.findUnique({ where: { username } });
+  return !existing;
+}

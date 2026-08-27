@@ -18,6 +18,7 @@
     "prisma:studio": "prisma studio",
     "db:seed": "tsx src/db/seed.ts",
     "dev:seed:demo": "tsx src/demo/demoSeed.ts",
+    "backfill:usernames": "tsx scripts/backfill-usernames.ts",
     "dev:seed:all": "SEED_FORCE_PASSWORD_RESET=true tsx src/db/seed.ts && tsx src/demo/demoSeed.ts",
     "db:seed:docker": "node dist/db/seed.js",
     "dev:reset:postgres": "tsx scripts/dev-reset-postgres.ts",

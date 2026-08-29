@@ -88,7 +88,72 @@ describe('apelido — a única coluna de identidade em texto claro', () => {
     expect(response.json().users).toEqual([]);
   });
 
-  it('a projeção é a mesma do lookup por e-mail', async () => {
+  it('o resultado carrega retrato e e-mail, para ser reconhecível', async () => {
+    const user = await createTestUser('busca.retrato@example.com', 'Senha!12345', {
+      firstName: 'Vera',
+      lastName: 'Matos',
+    });
+    await prisma.authUser.update({
+      where: { id: user.id },
+      data: { username: 'vera.matos', avatarVersion: 3, avatarStatus: 'active' },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/internal/users/search?q=vera.matos',
+      headers: INTERNAL,
+    });
+
+    // Dois `vera.m` não se distinguem por handle nenhum: sem e-mail e retrato, escolher é chutar.
+    const [hit] = response.json().users;
+    expect(hit).toMatchObject({
+      username: 'vera.matos',
+      displayName: 'Vera Matos',
+      email: 'busca.retrato@example.com',
+      avatarVersion: 3,
+      avatarStatus: 'active',
+    });
+  });
+
+  it('quem se retirou do diretório não entrega e-mail nenhum', async () => {
+    const user = await createTestUser('busca.retirada@example.com', 'Senha!12345', {
+      firstName: 'Ivo',
+      lastName: 'Salles',
+    });
+    await prisma.authUser.update({
+      where: { id: user.id },
+      data: { username: 'ivo.salles', usernameDiscoverable: false },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/internal/users/search?q=ivo.salles',
+      headers: INTERNAL,
+    });
+
+    // O filtro vem antes da projeção: enriquecer o resultado não pode furar quem se escondeu.
+    expect(response.json().users).toEqual([]);
+  });
+
+  it('o índice único é a última palavra sobre handle repetido', async () => {
+    const primeiro = await createTestUser('handle.unico.a@example.com', 'Senha!12345', {
+      firstName: 'Nara',
+      lastName: 'Diniz',
+    });
+    const segundo = await createTestUser('handle.unico.b@example.com', 'Senha!12345', {
+      firstName: 'Noel',
+      lastName: 'Dias',
+    });
+
+    await prisma.authUser.update({ where: { id: primeiro.id }, data: { username: 'nara.diniz' } });
+
+    // Nem que o caminho de escrita erre: o banco recusa o segundo.
+    await expect(
+      prisma.authUser.update({ where: { id: segundo.id }, data: { username: 'nara.diniz' } }),
+    ).rejects.toThrow();
+  });
+
+  it('a busca entrega mais que o lookup por e-mail, e é de propósito', async () => {
     // Autônomo de propósito: cada teste roda com o banco limpo, e depender do anterior faria a
     // suíte passar ou falhar conforme a ordem.
     const user = await createTestUser('busca.projecao@example.com', 'Senha!12345', {
@@ -103,9 +168,18 @@ describe('apelido — a única coluna de identidade em texto claro', () => {
       headers: INTERNAL,
     });
 
-    // Quem acha pela busca não pode receber mais do que quem já sabia o e-mail.
+    // Quem busca por prefixo precisa reconhecer quem achou, então recebe e-mail e retrato — o
+    // lookup por e-mail exato continua devolvendo só id, handle e nome, porque lá quem pergunta
+    // já sabe com quem quer falar.
     const [hit] = response.json().users;
-    expect(Object.keys(hit).sort()).toEqual(['displayName', 'id', 'username']);
+    expect(Object.keys(hit).sort()).toEqual([
+      'avatarStatus',
+      'avatarVersion',
+      'displayName',
+      'email',
+      'id',
+      'username',
+    ]);
   });
 
   it('diz que o handle livre está livre, sem pedir sessão', async () => {

@@ -241,7 +241,16 @@ export async function getUserAvatarMetadata(userId: string): Promise<{
 export async function searchUsersByUsernamePrefix(
   prefix: string,
   limit = 8,
-): Promise<Array<{ id: string; username: string; displayName: string }>> {
+): Promise<
+  Array<{
+    id: string;
+    username: string;
+    displayName: string;
+    email: string;
+    avatarVersion: number;
+    avatarStatus: 'active' | 'removed' | null;
+  }>
+> {
   const normalized = prefix.trim().toLowerCase();
   if (normalized.length < 2) return [];
 
@@ -251,7 +260,15 @@ export async function searchUsersByUsernamePrefix(
       usernameDiscoverable: true,
       status: 'active',
     },
-    select: { id: true, username: true, firstNameEncrypted: true, lastNameEncrypted: true },
+    select: {
+      id: true,
+      username: true,
+      firstNameEncrypted: true,
+      lastNameEncrypted: true,
+      emailEncrypted: true,
+      avatarVersion: true,
+      avatarStatus: true,
+    },
     orderBy: { username: 'asc' },
     take: Math.min(Math.max(limit, 1), 20),
   });
@@ -259,6 +276,13 @@ export async function searchUsersByUsernamePrefix(
   return users.map((user) => ({
     id: user.id,
     username: user.username ?? '',
+    // O e-mail e o retrato vão junto porque o resultado precisa ser reconhecível: dois `camila.o`
+    // não se distinguem por handle nenhum. É uma troca deliberada — quem varre prefixos passa a
+    // colher endereços — e está registrada em `REQUISICAO-E-INTERTENANT-PLANO.md`.
+    email: decryptField(user.emailEncrypted),
+    avatarVersion: user.avatarVersion ?? 0,
+    avatarStatus:
+      user.avatarStatus === 'active' || user.avatarStatus === 'removed' ? user.avatarStatus : null,
     // O nome de exibição só é decifrado **depois** do filtro: o que decide quem aparece é o
     // handle, e nunca o campo cifrado.
     displayName: [

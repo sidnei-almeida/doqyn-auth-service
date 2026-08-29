@@ -16,6 +16,8 @@ export type DemoPendingUserDef = {
   email: string;
   firstName: string;
   lastName: string;
+  /** Ver `DemoTenantMemberDef.username`. Ausente aqui: deriva do e-mail. */
+  username?: string;
   whatsapp: string;
   taxId: string;
   personType: 'cpf' | 'cnpj';
@@ -46,6 +48,14 @@ export type DemoTenantMemberDef = {
   email: string;
   firstName: string;
   lastName: string;
+  /**
+   * O handle público, escrito à mão para quem o demo usa na busca entre empresas.
+   *
+   * Ausente, `claimUsername` deriva do e-mail — que é o que acontece com quem se cadastra sem
+   * escolher. Escrever aqui é o que torna o demo capaz de mostrar a diferença entre o handle
+   * escolhido e o herdado do endereço.
+   */
+  username?: string;
   whatsapp: string;
   roles: Array<'company_admin' | 'user'>;
   jobTitle?: string;
@@ -69,6 +79,7 @@ export const DEMO_ACCESS_GROUPS: DemoAccessGroupDef[] = [
  */
 export const DEMO_COMPANY_ADMIN: DemoTenantMemberDef = {
   seedKey: 'company_admin',
+  username: 'rafa.mendes',
   email: 'rafael.mendes@doqyn.dev',
   firstName: 'Rafael',
   lastName: 'Mendes',
@@ -85,6 +96,7 @@ export const DEMO_COMPANY_ADMIN: DemoTenantMemberDef = {
 export const DEMO_COMPANY_DEV_ACTIVE_USERS: DemoTenantMemberDef[] = [
   {
     seedKey: 'camila_oliveira',
+    username: 'camila.oli',
     email: 'camila.oliveira@doqyn.dev',
     firstName: 'Camila',
     lastName: 'Oliveira',
@@ -95,6 +107,7 @@ export const DEMO_COMPANY_DEV_ACTIVE_USERS: DemoTenantMemberDef[] = [
   },
   {
     seedKey: 'thiago_barros',
+    username: 'thi.barros',
     email: 'thiago.barros@doqyn.dev',
     firstName: 'Thiago',
     lastName: 'Barros',
@@ -105,6 +118,7 @@ export const DEMO_COMPANY_DEV_ACTIVE_USERS: DemoTenantMemberDef[] = [
   },
   {
     seedKey: 'renata_alves',
+    username: 'renata.alves',
     email: 'renata.alves@doqyn.dev',
     firstName: 'Renata',
     lastName: 'Alves',

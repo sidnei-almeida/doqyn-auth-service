@@ -5,6 +5,7 @@ import { CONSENT_TEXT_VERSION } from '../modules/access-requests/accessRequests.
 import { recordTermsAcceptance } from '../modules/terms/termsAcceptance.service.js';
 import { DOQYN_TERMS_VERSION } from '../modules/terms/terms.constants.js';
 import { encryptField, hashLookup } from '../security/crypto.js';
+import { claimUsername } from '../modules/users/users.service.js';
 import { hashPassword } from '../security/password.js';
 import {
   detectTaxIdType,
@@ -154,6 +155,26 @@ async function resetDemoMembershipToPending(membershipId: string) {
   });
 }
 
+/**
+ * O handle do usuário semeado, e só quando ele ainda não tem um.
+ *
+ * O seed roda de novo sobre o mesmo banco. Reclamar o handle a cada passada faria `claimUsername`
+ * encontrar o handle ocupado — pelo próprio dono — e devolver `rafa.mendes2` na segunda rodada,
+ * `rafa.mendes3` na terceira. Quem já tem handle não é renomeado; o índice único do Postgres
+ * continua sendo a última palavra sobre duplicidade.
+ */
+async function ensureSeedUsername(
+  userId: string,
+  current: string | null,
+  chosen: string | undefined,
+  email: string,
+): Promise<void> {
+  if (current) return;
+
+  const username = await claimUsername(prisma, chosen, email);
+  await prisma.authUser.update({ where: { id: userId }, data: { username } });
+}
+
 async function ensurePendingAccessRequest(input: {
   tenantUuid: string;
   tenantTextId: string;
@@ -190,6 +211,8 @@ async function ensurePendingAccessRequest(input: {
       emailVerified: true,
     },
   });
+
+  await ensureSeedUsername(user.id, user.username, input.user.username, normalizedEmail);
 
   await prisma.authCredential.upsert({
     where: { userId: user.id },
@@ -384,6 +407,8 @@ async function ensureActiveTenantMember(
       emailVerified: true,
     },
   });
+
+  await ensureSeedUsername(user.id, user.username, member.username, normalizedEmail);
 
   await prisma.authCredential.upsert({
     where: { userId: user.id },

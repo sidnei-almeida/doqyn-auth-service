@@ -58,12 +58,15 @@ import {
   individualSignupSchema,
 } from '../individual-signups/individualSignups.schemas.js';
 import { submitIndividualSignup } from '../individual-signups/individualSignups.service.js';
+import { normalizeUsername, validateUsernameShape } from '../users/username.js';
+import { isUsernameAvailable } from '../users/users.service.js';
 import { requireSession, type AuthenticatedRequest } from '../admin/adminAuth.js';
 import { AUTH_ERROR_MESSAGES } from '../../utils/authErrorCodes.js';
 import { assertDatabaseAvailable } from '../../utils/routeErrors.js';
 import {
   checkAccessRequestRateLimit,
   checkSignupRateLimit,
+  checkUsernameAvailabilityRateLimit,
 } from '../../security/rateLimit.js';
 
 function getSessionTokenFromRequest(request: FastifyRequest): string | undefined {
@@ -247,6 +250,38 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       user: result.user,
       tenant: result.tenant,
       activeMembership: result.activeMembership,
+    });
+  });
+
+  /**
+   * O apelido está livre?
+   *
+   * Pública porque é usada no cadastro, antes de existir sessão. Devolve também a forma inválida e
+   * a reservada, porque para quem escolhe as três respostas são a mesma: "esse não dá, escolha
+   * outro".
+   *
+   * A resposta não diz **de quem** é o handle, mas dizer quais existem já é meia lista. Por isso
+   * tem teto por IP próprio: o de cadastro não vale aqui, porque só é consumido no POST, e esta
+   * rota é um GET que ninguém precisa concluir para usar.
+   */
+  app.get('/auth/username-available', async (request, reply) => {
+    const ctx = extractRequestContext(request);
+    await checkUsernameAvailabilityRateLimit(ctx.ipHash);
+
+    const raw = (request.query as { username?: string }).username ?? '';
+    const username = normalizeUsername(raw);
+    const problem = validateUsernameShape(username);
+
+    if (problem) {
+      return reply.send({ ok: true, username, available: false, reason: problem });
+    }
+
+    const available = await isUsernameAvailable(username);
+    return reply.send({
+      ok: true,
+      username,
+      available,
+      ...(available ? {} : { reason: 'taken' as const }),
     });
   });
 

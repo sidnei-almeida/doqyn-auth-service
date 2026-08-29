@@ -90,6 +90,18 @@ export async function checkAccessRequestRateLimit(ipHash: string): Promise<void>
   await checkLimit(`access-request:ip:${ipHash}`, 10);
 }
 
+/**
+ * A conferência de apelido é digitada, então o teto é alto — e existe mesmo assim.
+ *
+ * Quem escolhe um handle no cadastro dispara uma dezena de conferências entre correções. Quem
+ * enumera dispara uma por handle testado: sem teto, a rota diria em minutos quais apelidos já
+ * existem na base inteira. Ela não diz de quem é o handle, mas a lista dos que existem já é o
+ * começo do alvo.
+ */
+export async function checkUsernameAvailabilityRateLimit(ipHash: string): Promise<void> {
+  await checkLimit(`username-available:ip:${ipHash}`, 60);
+}
+
 export async function checkEmailChangeRequestRateLimit(
   ipHash: string,
   userId: string,

@@ -9,6 +9,7 @@ import {
   suggestUsernameFromEmail,
   validateUsernameShape,
 } from '../src/modules/users/username.js';
+import { resetRateLimitStore } from '../src/security/rateLimit.js';
 
 const INTERNAL = { authorization: `Bearer ${TEST_ENV.DOQYN_INTERNAL_API_KEY}` };
 
@@ -105,5 +106,72 @@ describe('apelido — a única coluna de identidade em texto claro', () => {
     // Quem acha pela busca não pode receber mais do que quem já sabia o e-mail.
     const [hit] = response.json().users;
     expect(Object.keys(hit).sort()).toEqual(['displayName', 'id', 'username']);
+  });
+
+  it('diz que o handle livre está livre, sem pedir sessão', async () => {
+    resetRateLimitStore();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/auth/username-available?username=handle.inedito',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ username: 'handle.inedito', available: true });
+  });
+
+  it('normaliza antes de responder, e devolve a forma conferida', async () => {
+    resetRateLimitStore();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/auth/username-available?username=${encodeURIComponent('  João.Silva ')}`,
+    });
+
+    // Sem isso, quem digita com acento recebe "livre" e depois é salvo com outro handle.
+    expect(response.json().username).toBe('joao.silva');
+  });
+
+  it('o ocupado, o reservado e o malformado são a mesma recusa para quem escolhe', async () => {
+    resetRateLimitStore();
+    const user = await createTestUser('handle.ocupado@example.com', 'Senha!12345', {
+      firstName: 'Tereza',
+      lastName: 'Lima',
+    });
+    await prisma.authUser.update({ where: { id: user.id }, data: { username: 'tereza.lima' } });
+
+    const casos: Array<[string, string]> = [
+      ['tereza.lima', 'taken'],
+      ['suporte', 'reserved'],
+      ['ab', 'too_short'],
+      ['.joao', 'invalid_shape'],
+    ];
+
+    for (const [username, reason] of casos) {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/auth/username-available?username=${encodeURIComponent(username)}`,
+      });
+      expect(response.json()).toMatchObject({ available: false, reason });
+    }
+  });
+
+  it('tem teto por IP, porque a rota é pública e não precisa ser concluída', async () => {
+    resetRateLimitStore();
+
+    // O teto de cadastro não cobriria: ele só é consumido no POST, e esta é uma consulta GET.
+    for (let i = 0; i < 60; i += 1) {
+      const ok = await app.inject({
+        method: 'GET',
+        url: `/auth/username-available?username=handle.teto${i}`,
+      });
+      expect(ok.statusCode).toBe(200);
+    }
+
+    const barrada = await app.inject({
+      method: 'GET',
+      url: '/auth/username-available?username=handle.teto.extra',
+    });
+    expect(barrada.statusCode).toBe(429);
   });
 });

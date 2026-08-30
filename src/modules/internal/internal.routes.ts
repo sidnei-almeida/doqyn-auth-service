@@ -91,16 +91,6 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * O diretório DOQYN: existe alguém com este e-mail?
-   *
-   * Não colide com `/internal/users/:userId`: o roteador do Fastify dá precedência à rota estática
-   * sobre a paramétrica, independente da ordem de registro.
-   *
-   * Nunca responde 404: encontrado e não encontrado têm a mesma forma, e só o campo `found` os
-   * separa. O 404 diria "esse e-mail não é usuário" com o status HTTP, que é justamente o que a
-   * resposta uniforme existe para não dizer de graça.
-   */
-  /**
    * A busca navegável: prefixo de handle.
    *
    * Mínimo de dois caracteres, e teto de resultados. Um prefixo de uma letra devolveria um pedaço
@@ -140,6 +130,16 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ ok: true, users });
   });
 
+  /**
+   * O diretório DOQYN: existe alguém com este e-mail?
+   *
+   * Não colide com `/internal/users/:userId`: o roteador do Fastify dá precedência à rota estática
+   * sobre a paramétrica, independente da ordem de registro.
+   *
+   * Nunca responde 404: encontrado e não encontrado têm a mesma forma, e só o campo `found` os
+   * separa. O 404 diria "esse e-mail não é usuário" com o status HTTP, que é justamente o que a
+   * resposta uniforme existe para não dizer de graça.
+   */
   app.get('/internal/users/lookup', async (request, reply) => {
     const query = request.query as { email?: string };
     const parsed = emailParamSchema.safeParse({ email: query.email?.trim() ?? '' });

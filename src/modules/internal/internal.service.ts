@@ -20,6 +20,8 @@ import {
   toPublicUser,
   updateUserAvatarMetadata,
   type UpdateUserAvatarMetadataInput,
+  listUsernamesByIds,
+  searchUsersByUsernamePrefix,
 } from '../users/users.service.js';
 import type { CreateUserInput } from '../users/users.service.js';
 import type { PublicUser } from '../users/users.schemas.js';
@@ -111,7 +113,6 @@ export async function internalLookupUserByEmail(email: string): Promise<Director
  * simetria: quem acha pela busca não pode receber mais do que quem já sabia o e-mail.
  */
 export async function internalSearchUsersByUsername(prefix: string, limit?: number) {
-  const { searchUsersByUsernamePrefix } = await import('../users/users.service.js');
   return searchUsersByUsernamePrefix(prefix, limit);
 }
 
@@ -123,7 +124,6 @@ export async function internalSearchUsersByUsername(prefix: string, limit?: numb
  * do handle que envelheceria a cada troca de apelido.
  */
 export async function internalListUsernames(ids: string[]) {
-  const { listUsernamesByIds } = await import('../users/users.service.js');
   return listUsernamesByIds(ids);
 }
 

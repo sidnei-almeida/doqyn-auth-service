@@ -295,6 +295,54 @@ export async function searchUsersByUsernamePrefix(
   }));
 }
 
+/**
+ * Apelido e nome de exibição de um punhado de contas, por id.
+ *
+ * Existe porque o app não guarda o handle: ele é coluna do auth-service, e o cadastro que o app
+ * mantém por tenant tem um campo `username` que é **e-mail** de um esquema anterior. Sem esta
+ * rota, a única saída era exibir aquele campo — que mostra `@fulano@empresa.com` no lugar do
+ * apelido — ou não exibir apelido nenhum.
+ *
+ * Não é caminho de descoberta: quem chama já tem os ids, e só recebe o rótulo público de contas
+ * que já conhece. Por isso não há filtro por `usernameDiscoverable` aqui — ele decide quem aparece
+ * numa **busca**, e não se quem já foi encontrado tem nome.
+ */
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function listUsernamesByIds(
+  ids: string[],
+): Promise<Array<{ id: string; username: string; displayName: string }>> {
+  /**
+   * A forma do id é conferida aqui, e não é zelo: a coluna é `uuid` no Postgres, e um id
+   * malformado no meio da lista não devolve "esse não existe" — derruba a consulta inteira com
+   * erro de tipo, levando junto os ids válidos que vieram com ele.
+   */
+  const unique = [...new Set(ids.map((id) => id.trim()).filter((id) => UUID_SHAPE.test(id)))].slice(
+    0,
+    200,
+  );
+  if (!unique.length) return [];
+
+  const users = await prisma.authUser.findMany({
+    where: { id: { in: unique } },
+    select: { id: true, username: true, firstNameEncrypted: true, lastNameEncrypted: true },
+  });
+
+  return users
+    .filter((user) => user.username)
+    .map((user) => ({
+      id: user.id,
+      username: user.username ?? '',
+      displayName: [
+        user.firstNameEncrypted ? decryptField(user.firstNameEncrypted) : '',
+        user.lastNameEncrypted ? decryptField(user.lastNameEncrypted) : '',
+      ]
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .join(' '),
+    }));
+}
+
 /** O handle está livre? Reservado e formato inválido contam como ocupado para quem escolhe. */
 export async function isUsernameAvailable(username: string): Promise<boolean> {
   const existing = await prisma.authUser.findUnique({ where: { username } });

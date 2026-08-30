@@ -23,6 +23,7 @@ import {
   internalListTenantAccessRequests,
   internalListTenantMembers,
   internalLookupUserByEmail,
+  internalListUsernames,
   internalSearchUsersByUsername,
   internalUpdateUserAvatarMetadata,
   internalVerifySession,
@@ -119,6 +120,22 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
     const limit = Number.parseInt(query.limit ?? '8', 10);
     const users = await internalSearchUsersByUsername(prefix, Number.isFinite(limit) ? limit : 8);
 
+    return reply.send({ ok: true, users });
+  });
+
+  /**
+   * Apelidos por lote, para o app rotular quem já está na tela dele.
+   *
+   * `POST` porque a lista de ids não cabe com folga numa query string, e não porque escreve algo
+   * — a rota é leitura pura, protegida pela chave interna como todo o resto deste módulo.
+   */
+  app.post('/internal/users/usernames', async (request, reply) => {
+    const body = request.body as { userIds?: unknown };
+    const ids = Array.isArray(body?.userIds)
+      ? body.userIds.filter((id): id is string => typeof id === 'string')
+      : [];
+
+    const users = await internalListUsernames(ids);
     return reply.send({ ok: true, users });
   });
 

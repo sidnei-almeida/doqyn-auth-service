@@ -153,6 +153,48 @@ describe('apelido — a única coluna de identidade em texto claro', () => {
     ).rejects.toThrow();
   });
 
+  it('devolve apelido por lote, para quem já sabe os ids', async () => {
+    const a = await createTestUser('lote.um@example.com', 'Senha!12345', {
+      firstName: 'Olga',
+      lastName: 'Reis',
+    });
+    const b = await createTestUser('lote.dois@example.com', 'Senha!12345', {
+      firstName: 'Ivan',
+      lastName: 'Serra',
+    });
+    await prisma.authUser.update({ where: { id: a.id }, data: { username: 'olga.reis' } });
+    await prisma.authUser.update({
+      where: { id: b.id },
+      // Retirado do diretório, e ainda assim rotulável: `usernameDiscoverable` decide quem aparece
+      // numa busca, não se quem já foi encontrado tem nome.
+      data: { username: 'ivan.serra', usernameDiscoverable: false },
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/internal/users/usernames',
+      headers: INTERNAL,
+      payload: { userIds: [a.id, b.id, 'id-que-nao-existe'] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const handles = response.json().users.map((u: { username: string }) => u.username);
+    expect(handles.sort()).toEqual(['ivan.serra', 'olga.reis']);
+  });
+
+  it('não é caminho de descoberta: sem ids, sem resposta', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/internal/users/usernames',
+      headers: INTERNAL,
+      payload: { userIds: [] },
+    });
+
+    // Lista vazia devolve vazio em vez de "todos": o contrário faria da rota um despejo do
+    // cadastro para quem tem a chave interna e nenhum id.
+    expect(response.json().users).toEqual([]);
+  });
+
   it('a busca entrega mais que o lookup por e-mail, e é de propósito', async () => {
     // Autônomo de propósito: cada teste roda com o banco limpo, e depender do anterior faria a
     // suíte passar ou falhar conforme a ordem.

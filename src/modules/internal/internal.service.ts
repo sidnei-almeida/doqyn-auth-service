@@ -109,12 +109,21 @@ export async function internalLookupUserByEmail(email: string): Promise<Director
  * A projeção é a mesma do lookup por e-mail — id, nome de exibição e agora o handle — e por
  * simetria: quem acha pela busca não pode receber mais do que quem já sabia o e-mail.
  */
-export async function internalSearchUsersByUsername(
-  prefix: string,
-  limit?: number,
-): Promise<Array<{ id: string; username: string; displayName: string }>> {
+export async function internalSearchUsersByUsername(prefix: string, limit?: number) {
   const { searchUsersByUsernamePrefix } = await import('../users/users.service.js');
   return searchUsersByUsernamePrefix(prefix, limit);
+}
+
+/**
+ * O rótulo público de contas que quem chama já conhece pelo id.
+ *
+ * Não é busca: nada é descoberto aqui. Serve para o app mostrar o apelido de gente que já está
+ * na tela dele — a lista de contatos, o seletor de destinatário — sem ter de guardar uma cópia
+ * do handle que envelheceria a cada troca de apelido.
+ */
+export async function internalListUsernames(ids: string[]) {
+  const { listUsernamesByIds } = await import('../users/users.service.js');
+  return listUsernamesByIds(ids);
 }
 
 export async function internalVerifySession(sessionToken: string) {

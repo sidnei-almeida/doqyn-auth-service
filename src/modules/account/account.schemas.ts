@@ -1,8 +1,15 @@
 import { z } from 'zod';
 
-/** Nome e sobrenome da própria conta. Vazio é permitido: nem toda pessoa informa sobrenome. */
+/**
+ * Nome e sobrenome da própria conta.
+ *
+ * **Sobrenome pode ser vazio; nome não.** Nem toda pessoa informa sobrenome, e todo formulário de
+ * cadastro já exige `firstName`. Sem o mínimo aqui, um `PATCH` com `firstName: ""` gravava nulo e
+ * a pessoa passava a aparecer sem nome no diretório e nas listas de membros — inclusive para quem
+ * já a tinha encontrado antes.
+ */
 export const updateOwnProfileSchema = z.object({
-  firstName: z.string().trim().max(80, 'Nome muito longo.'),
+  firstName: z.string().trim().min(1, 'Informe o nome.').max(80, 'Nome muito longo.'),
   lastName: z.string().trim().max(80, 'Sobrenome muito longo.'),
 });
 

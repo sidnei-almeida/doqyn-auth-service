@@ -4,7 +4,9 @@ import { slugify } from './normalize.js';
 const MAX_TENANT_ID_LENGTH = 48;
 
 export function generateBusinessTenantId(displayName: string): string {
-  const slug = slugify(displayName).replace(/[^a-z0-9_]/g, '').slice(0, 28);
+  const slug = slugify(displayName)
+    .replace(/[^a-z0-9_]/g, '')
+    .slice(0, 28);
   const suffix = randomBytes(3).toString('hex');
   const base = slug || 'org';
   let tenantId = `company_${base}_${suffix}`;
@@ -18,7 +20,9 @@ export function generateBusinessTenantId(displayName: string): string {
 
 /** Gera tenantId seguro para pessoa física (individual). Nunca inclui CPF. */
 export function generateIndividualTenantId(firstName: string, lastName: string): string {
-  const slug = slugify(`${firstName} ${lastName}`).replace(/[^a-z0-9_]/g, '').slice(0, 24);
+  const slug = slugify(`${firstName} ${lastName}`)
+    .replace(/[^a-z0-9_]/g, '')
+    .slice(0, 24);
   const suffix = randomBytes(3).toString('hex');
   const base = slug || 'person';
   let tenantId = `individual_${base}_${suffix}`;

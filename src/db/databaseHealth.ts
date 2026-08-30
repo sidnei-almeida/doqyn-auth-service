@@ -43,8 +43,7 @@ export function maskDatabaseUrl(url: string): string {
     const parsed = new URL(url);
     if (parsed.password) parsed.password = '***';
     if (parsed.username) {
-      parsed.username =
-        parsed.username.length <= 3 ? '***' : `${parsed.username.slice(0, 3)}***`;
+      parsed.username = parsed.username.length <= 3 ? '***' : `${parsed.username.slice(0, 3)}***`;
     }
     return parsed.toString();
   } catch {

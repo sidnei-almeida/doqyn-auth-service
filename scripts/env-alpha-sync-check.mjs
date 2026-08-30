@@ -9,7 +9,10 @@ import { existsSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const authRoot = resolve(__dirname, '..');
-const alphaScript = resolve(authRoot, '../doqyn-alpha-document-intelligence/scripts/env-auth-sync-check.mjs');
+const alphaScript = resolve(
+  authRoot,
+  '../doqyn-alpha-document-intelligence/scripts/env-auth-sync-check.mjs',
+);
 
 if (!existsSync(alphaScript)) {
   console.error('Não achei o script do Alpha em:', alphaScript);
@@ -21,7 +24,14 @@ if (!existsSync(alphaScript)) {
 const extra = process.argv.slice(2);
 const result = spawnSync(
   process.execPath,
-  [alphaScript, '--auth-dir', authRoot, '--alpha-env', resolve(authRoot, '../doqyn-alpha-document-intelligence/.env'), ...extra],
+  [
+    alphaScript,
+    '--auth-dir',
+    authRoot,
+    '--alpha-env',
+    resolve(authRoot, '../doqyn-alpha-document-intelligence/.env'),
+    ...extra,
+  ],
   { stdio: 'inherit' },
 );
 process.exit(result.status ?? 1);

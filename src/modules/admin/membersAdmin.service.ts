@@ -1,4 +1,4 @@
-import type { MembershipStatus, TenantRole } from '@prisma/client';
+import type { AccessRequestStatus, MembershipStatus, TenantRole } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { decryptField, encryptField } from '../../security/crypto.js';
 import { ForbiddenError, NotFoundError, ValidationError } from '../../utils/errors.js';
@@ -534,12 +534,18 @@ export async function unblockMembership(
  * isso passa por `resolveTenantScope`) e a chave interna do app DOQYN, que já chega com o tenant
  * resolvido e não tem ator. O que os dois compartilham é esta consulta.
  */
-export async function listAccessRequestsByTenant(tenantTextId: string, status?: string) {
+export async function listAccessRequestsByTenant(
+  tenantTextId: string,
+  // Tipo estreito em vez de `string` com cast: o cast dizia ao TypeScript que o valor já estava
+  // conferido quando ninguém o havia conferido, e era isso que deixava um `?status=foo` chegar
+  // cru no filtro do Prisma.
+  status?: AccessRequestStatus,
+) {
   const tenantFilter = tenantTextId;
 
   const requests = await prisma.authAccessRequest.findMany({
     where: {
-      ...(status ? { status: status as 'pending' | 'approved' | 'rejected' | 'cancelled' } : {}),
+      ...(status ? { status } : {}),
       ...(tenantFilter ? { tenant: { tenantId: tenantFilter } } : {}),
     },
     include: {
@@ -586,7 +592,7 @@ export async function listAccessRequestsByTenant(tenantTextId: string, status?: 
 export async function listAccessRequestsForAdmin(
   actor: AdminActor,
   tenantTextId?: string,
-  status?: string,
+  status?: AccessRequestStatus,
 ) {
   // Idem: solicitações de acesso são sempre as do tenant da sessão.
   return listAccessRequestsByTenant(resolveTenantScope(actor, tenantTextId), status);

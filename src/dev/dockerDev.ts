@@ -34,11 +34,7 @@ export function startPostgresContainer(
   execInherit(`docker compose up -d ${serviceName}`);
 }
 
-export function checkTcpPort(
-  host: string,
-  port: number,
-  timeoutMs = 1000,
-): Promise<boolean> {
+export function checkTcpPort(host: string, port: number, timeoutMs = 1000): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = createConnection({ host, port });
     const finish = (ok: boolean) => {

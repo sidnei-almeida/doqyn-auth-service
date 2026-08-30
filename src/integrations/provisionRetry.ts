@@ -46,9 +46,7 @@ export async function retryFailedTenantProvisioning(
     : tenant.tenantId;
 
   const collectionPrefix =
-    tenant.tenantType === 'individual'
-      ? SHARED_INDIVIDUAL_COLLECTION_PREFIX
-      : tenant.tenantId;
+    tenant.tenantType === 'individual' ? SHARED_INDIVIDUAL_COLLECTION_PREFIX : tenant.tenantId;
 
   // Tenants criados antes do suporte multi-país (ou pelo caminho de admin, que ainda não
   // seta country) têm country/taxIdType nulos — assumir BR aqui é a mesma convenção usada

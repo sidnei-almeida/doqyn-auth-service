@@ -72,10 +72,7 @@ export async function connectRedisOnBoot(): Promise<void> {
   await getRedisClient();
 }
 
-export async function redisIncrWithTtl(
-  key: string,
-  ttlSeconds: number,
-): Promise<number | null> {
+export async function redisIncrWithTtl(key: string, ttlSeconds: number): Promise<number | null> {
   const client = await getRedisClient();
   if (!client) return null;
 

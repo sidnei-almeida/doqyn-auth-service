@@ -66,7 +66,9 @@ async function main(): Promise<void> {
     });
 
     const emptyWarning = buildEmptyDatabaseWarning(snapshot.counts);
-    const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> };
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as {
+      scripts: Record<string, string>;
+    };
 
     const report = {
       generatedAt: new Date().toISOString(),

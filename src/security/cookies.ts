@@ -5,11 +5,7 @@ export interface CookieOptions {
   maxAgeSeconds: number;
 }
 
-export function setSessionCookie(
-  reply: FastifyReply,
-  token: string,
-  options: CookieOptions,
-): void {
+export function setSessionCookie(reply: FastifyReply, token: string, options: CookieOptions): void {
   const env = loadEnv();
   const cookieOptions: {
     httpOnly: boolean;

@@ -84,6 +84,13 @@ model AuthUser {
   /// dois responde busca por prefixo, e sem isso achar alguém de outra empresa exigia saber o
   /// e-mail exato de antemão. O handle é a peça que torna o diretório navegável sem tirar nome
   /// nenhum da criptografia.
+  ///
+  /// **Não acrescente `@@index([username])` aqui.** O `@unique` acima já cria
+  /// `auth_users_username_key`, e o que a busca do diretório usa é o
+  /// `auth_users_username_prefix_idx` com `text_pattern_ops`, criado à mão na migração
+  /// `20260827160000_add_username` — o Prisma não sabe declarar classe de operador. Um
+  /// `@@index` aqui gera um btree comum e faz o `migrate dev` propor derrubar o de prefixo,
+  /// desotimizando o `LIKE 'x%'` em que a feature inteira se apoia.
   username           String?        @unique @map("username")
   /// Se o handle aparece na busca entre empresas.
   ///
@@ -117,7 +124,6 @@ model AuthUser {
   termsAcceptances   AuthTermsAcceptance[]
   oauthAccounts      AuthOAuthAccount[]
 
-  @@index([username])
   invitesSent        AuthInvite[]               @relation("InviteInvitedByUser")
   invitesAccepted    AuthInvite[]               @relation("InviteAcceptedByUser")
 

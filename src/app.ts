@@ -58,9 +58,7 @@ export async function buildApp() {
         databaseName: database.database,
         code: AUTH_DATABASE_UNAVAILABLE_CODE,
         message: AUTH_DATABASE_UNAVAILABLE_MESSAGE,
-        ...(env.NODE_ENV === 'development'
-          ? { devHint: `Run: ${DEV_DB_START_COMMAND}` }
-          : {}),
+        ...(env.NODE_ENV === 'development' ? { devHint: `Run: ${DEV_DB_START_COMMAND}` } : {}),
       });
     }
 

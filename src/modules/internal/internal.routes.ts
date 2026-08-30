@@ -4,6 +4,7 @@ import { loadEnv } from '../../config/env.js';
 import { ForbiddenError } from '../../utils/errors.js';
 import { AUTH_ERROR_MESSAGES } from '../../utils/authErrorCodes.js';
 import { emailParamSchema, userIdParamSchema } from '../users/users.schemas.js';
+import { accessRequestStatusQuerySchema } from './internal.schemas.js';
 import { membershipIdParamSchema } from '../admin/admin.schemas.js';
 import {
   createInternalUserSchema,
@@ -243,8 +244,25 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/internal/tenants/:tenantId/access-requests', async (request, reply) => {
     const tenantId = (request.params as { tenantId: string }).tenantId;
-    const status = (request.query as { status?: string }).status;
-    const requests = await internalListTenantAccessRequests(tenantId, status);
+
+    /**
+     * O status é conferido aqui porque vai parar num filtro de enum do Prisma.
+     *
+     * Sem isso, `?status=foo` não devolvia "valor inválido": estourava um erro de validação do
+     * Prisma lá dentro e virava 500, que diz a quem chamou que o servidor quebrou quando quem
+     * errou foi a chamada.
+     */
+    const parsed = accessRequestStatusQuerySchema.safeParse(request.query);
+
+    if (!parsed.success) {
+      return reply.status(400).send({
+        ok: false,
+        code: 'INVALID_STATUS',
+        message: 'Status inválido.',
+      });
+    }
+
+    const requests = await internalListTenantAccessRequests(tenantId, parsed.data.status);
     return reply.send({ ok: true, requests });
   });
 

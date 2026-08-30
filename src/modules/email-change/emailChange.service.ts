@@ -158,7 +158,9 @@ export async function requestEmailChange(
     ok: true as const,
     message: emailSent
       ? `Enviamos um link de confirmação para ${newEmail}.`
-      : `Confirmação criada. Configure o SMTP da empresa ou use o link abaixo em desenvolvimento.`,
+      : // SMTP por empresa foi retirado quando o envio passou a ser da plataforma. A frase
+        // continuava mandando a pessoa configurar algo que não existe mais.
+        `Confirmação criada, mas o e-mail não saiu. Em desenvolvimento, use o link abaixo.`,
     pendingEmail: newEmail,
     expiresAt: expiresAt.toISOString(),
     emailSent,

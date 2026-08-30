@@ -61,8 +61,7 @@ export function assertDemoSeedSafe(): { databaseUrl: string; databaseName: strin
     throw new Error(`Demo seed bloqueado: database "${database}" parece produção.`);
   }
 
-  const allowed =
-    SAFE_DATABASE_NAMES.has(database) || /(?:^|_)dev(?:$|_)/i.test(database);
+  const allowed = SAFE_DATABASE_NAMES.has(database) || /(?:^|_)dev(?:$|_)/i.test(database);
 
   if (!allowed) {
     throw new Error(

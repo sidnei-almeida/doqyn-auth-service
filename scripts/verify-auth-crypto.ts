@@ -99,7 +99,11 @@ async function main() {
       emailDecryptOk,
       lookupConsistent,
       hasCredential: Boolean(user.credential),
-      passwordHashFormat: hashValue ? (isArgon2idHash(hashValue) ? 'argon2id' : 'invalid') : 'missing',
+      passwordHashFormat: hashValue
+        ? isArgon2idHash(hashValue)
+          ? 'argon2id'
+          : 'invalid'
+        : 'missing',
       createdAt: user.createdAt.toISOString(),
       memberships: user.memberships.map((m) => ({
         status: m.status,
@@ -109,7 +113,9 @@ async function main() {
     });
 
     if (!user.credential) {
-      report.issues.push(`Usuário ${email ?? user.id} sem registro em auth_credentials (não consegue login por senha).`);
+      report.issues.push(
+        `Usuário ${email ?? user.id} sem registro em auth_credentials (não consegue login por senha).`,
+      );
     }
     if (emailDecryptOk && !lookupConsistent) {
       report.issues.push(

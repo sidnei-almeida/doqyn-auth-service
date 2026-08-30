@@ -145,7 +145,8 @@ export async function ensureDevDatabase(
           endpoint,
           databaseUrlRedacted,
           dockerAvailable,
-          containerRunning: containerRunning || isPostgresContainerRunning(deps.exec, dockerService),
+          containerRunning:
+            containerRunning || isPostgresContainerRunning(deps.exec, dockerService),
           portAccessible: true,
           migrationHint,
         };

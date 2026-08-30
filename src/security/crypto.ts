@@ -59,12 +59,7 @@ export function encryptField(value: string): string {
   return `${VERSION}:${iv.toString('base64')}:${authTag.toString('base64')}:${encrypted.toString('base64')}`;
 }
 
-function decryptWith(
-  key: Buffer,
-  iv: Buffer,
-  authTag: Buffer,
-  cipherText: Buffer,
-): string {
+function decryptWith(key: Buffer, iv: Buffer, authTag: Buffer, cipherText: Buffer): string {
   const decipher = createDecipheriv(ALGORITHM, key, iv);
   decipher.setAuthTag(authTag);
   return Buffer.concat([decipher.update(cipherText), decipher.final()]).toString('utf8');

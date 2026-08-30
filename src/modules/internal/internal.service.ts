@@ -1,3 +1,4 @@
+import type { AccessRequestStatus } from '@prisma/client';
 import { NotFoundError } from '../../utils/errors.js';
 import { listAccessRequestsByTenant } from '../admin/membersAdmin.service.js';
 import { decryptField } from '../../security/crypto.js';
@@ -235,7 +236,10 @@ export type InternalTenantMemberSnapshot = {
  * origens. Aqui a mesma consulta sai por chave interna, e a fusão passa a acontecer no servidor
  * do app.
  */
-export async function internalListTenantAccessRequests(tenantTextId: string, status?: string) {
+export async function internalListTenantAccessRequests(
+  tenantTextId: string,
+  status?: AccessRequestStatus,
+) {
   const tenant = await findTenantByTextId(tenantTextId);
   if (!tenant) {
     throw new NotFoundError('Tenant não encontrado.');

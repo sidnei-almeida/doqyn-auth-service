@@ -20,3 +20,14 @@ export const updateUserAvatarMetadataSchema = z.object({
   size: z.number().int().positive().nullable().optional(),
   status: z.enum(['active', 'removed']),
 });
+
+/**
+ * O filtro de status da listagem de solicitações.
+ *
+ * Os valores são os do enum `AccessRequestStatus` do Prisma. Um valor fora deles não chega a ser
+ * "nenhum resultado": estoura a validação do Prisma e vira 500, que culpa o servidor por um erro
+ * de quem chamou.
+ */
+export const accessRequestStatusQuerySchema = z.object({
+  status: z.enum(['pending', 'approved', 'rejected', 'cancelled']).optional(),
+});

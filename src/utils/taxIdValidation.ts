@@ -35,7 +35,10 @@ export function isValidTaxIdForCountry(
   const cleaned = normalizeTaxId(taxId);
 
   if (country.trim().toUpperCase() === 'BR') {
-    if (taxIdType !== undefined && taxIdType.trim().toLowerCase() !== BR_EXPECTED_TAX_ID_TYPE[personType]) {
+    if (
+      taxIdType !== undefined &&
+      taxIdType.trim().toLowerCase() !== BR_EXPECTED_TAX_ID_TYPE[personType]
+    ) {
       return false;
     }
     // CPF/CNPJ são só dígitos — normalizeTaxId preserva letras (pro NIF/CIF espanhol),

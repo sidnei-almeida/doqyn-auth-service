@@ -86,9 +86,7 @@ export function resolveMembershipAccessError(memberships: MembershipLike[]): {
   };
 }
 
-export function membershipStatusToErrorCode(
-  status: MembershipLike['status'],
-): AuthErrorCode {
+export function membershipStatusToErrorCode(status: MembershipLike['status']): AuthErrorCode {
   switch (status) {
     case 'pending':
       return 'MEMBERSHIP_PENDING';

@@ -74,6 +74,14 @@ export async function claimUsername(
 
   const base = validateUsernameShape(desired) ? fallback : desired;
 
+  /**
+   * Conferir e inserir não é atômico, e o índice único é quem decide de verdade.
+   *
+   * Dois cadastros simultâneos de `joao.silva@…` veem o handle livre ao mesmo tempo; o segundo
+   * `create` bate no `auth_users_username_key` e derruba o cadastro inteiro com P2002, quando o
+   * certo era ele sair como `joao.silva2`. Quem chama trata a violação chamando de novo — o laço
+   * abaixo já entrega o próximo livre.
+   */
   const free = await tx.authUser.findUnique({ where: { username: base } });
   if (!free) return base;
 

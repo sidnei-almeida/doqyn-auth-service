@@ -32,11 +32,7 @@ export type DockerStorageAudit = {
   dockerAvailable: boolean;
 };
 
-const CANDIDATE_VOLUME_PATTERNS = [
-  /postgres_auth_data/i,
-  /doqyn.*auth/i,
-  /auth.*postgres/i,
-];
+const CANDIDATE_VOLUME_PATTERNS = [/postgres_auth_data/i, /doqyn.*auth/i, /auth.*postgres/i];
 
 export function detectComposeProjectName(options: {
   composeProjectNameEnv?: string;
@@ -335,18 +331,21 @@ export function assertSafeDevScripts(scripts: Record<string, string>): {
 
   return {
     devUsesEnsureOnly: dev.includes('ensure-dev-db') && dev.includes('src/server.ts'),
-    ensureDevDbSafe: !ensure.includes('reset') && !ensure.includes('seed') && !ensure.includes('down -v'),
-    auditHealthSafe: !audit.includes('reset') && !audit.includes('seed') && !audit.includes('down -v'),
+    ensureDevDbSafe:
+      !ensure.includes('reset') && !ensure.includes('seed') && !ensure.includes('down -v'),
+    auditHealthSafe:
+      !audit.includes('reset') && !audit.includes('seed') && !audit.includes('down -v'),
     devDoesNotSeedOrReset:
       !dev.includes('db:seed') &&
       !dev.includes('dev:reset:postgres') &&
       !dev.includes('down -v') &&
       !dev.includes('migrate reset'),
     destructiveScriptsExplicitOnly: Object.entries(scripts)
-      .filter(([name, cmd]) =>
-        ['dev:reset:postgres', 'docker:down'].includes(name) ||
-        cmd.includes('migrate reset') ||
-        cmd.includes('down -v'),
+      .filter(
+        ([name, cmd]) =>
+          ['dev:reset:postgres', 'docker:down'].includes(name) ||
+          cmd.includes('migrate reset') ||
+          cmd.includes('down -v'),
       )
       .map(([name]) => name),
   };

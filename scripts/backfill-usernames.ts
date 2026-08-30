@@ -61,7 +61,7 @@ async function main() {
     if (apply) {
       await prisma.authUser.update({ where: { id: user.id }, data: { username } });
     }
-    console.log(`${email} → @${username}`);
+    console.log(`${user.id} → @${username}`);
     done += 1;
   }
 

@@ -99,8 +99,7 @@ async function main() {
           ok: loginBody?.ok ?? loginResponse.ok,
           code: loginBody?.code,
         },
-        overallOk:
-          decryptedEmail === email && localVerify && loginResponse.status === 200,
+        overallOk: decryptedEmail === email && localVerify && loginResponse.status === 200,
       },
       null,
       2,

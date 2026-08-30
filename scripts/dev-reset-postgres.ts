@@ -80,8 +80,7 @@ function assertSafePostgresTarget(databaseUrl: string): void {
     throw new Error(`Reset bloqueado: database "${database}" parece produção.`);
   }
 
-  const allowed =
-    SAFE_DATABASE_NAMES.has(database) || /(?:^|_)dev(?:$|_)/i.test(database);
+  const allowed = SAFE_DATABASE_NAMES.has(database) || /(?:^|_)dev(?:$|_)/i.test(database);
 
   if (!allowed) {
     throw new Error(

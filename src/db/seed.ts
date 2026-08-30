@@ -92,10 +92,7 @@ async function ensureDevUser(input: DevUserSeed, tenantUuid: string, passwordHas
   await prisma.authCredential.upsert({
     where: { userId: user.id },
     create: { userId: user.id, passwordHash },
-    update:
-      process.env.SEED_FORCE_PASSWORD_RESET === 'true'
-        ? { passwordHash }
-        : {},
+    update: process.env.SEED_FORCE_PASSWORD_RESET === 'true' ? { passwordHash } : {},
   });
 
   const membership = await prisma.authMembership.upsert({
@@ -161,18 +158,24 @@ async function seed() {
   if (process.env.SEED_FORCE_PASSWORD_RESET === 'true') {
     console.log('  passwordHash: atualizado (SEED_FORCE_PASSWORD_RESET=true)');
   } else {
-    console.log('  passwordHash: preservado para usuários existentes (use SEED_FORCE_PASSWORD_RESET=true para resetar)');
+    console.log(
+      '  passwordHash: preservado para usuários existentes (use SEED_FORCE_PASSWORD_RESET=true para resetar)',
+    );
   }
   console.log('');
   console.log(`  ${sidnei.email}`);
   console.log(`    displayName: ${sidnei.displayName}`);
   console.log(`    roles: ${sidnei.roles.join(', ')}`);
-  console.log(`    accessGroupIds: ${sidnei.accessGroupIds.length ? sidnei.accessGroupIds.join(', ') : '(nenhum)'}`);
+  console.log(
+    `    accessGroupIds: ${sidnei.accessGroupIds.length ? sidnei.accessGroupIds.join(', ') : '(nenhum)'}`,
+  );
   console.log('');
   console.log(`  ${testJuridico.email}`);
   console.log(`    displayName: ${testJuridico.displayName}`);
   console.log(`    roles: ${testJuridico.roles.join(', ')}`);
-  console.log(`    accessGroupIds: ${testJuridico.accessGroupIds.length ? testJuridico.accessGroupIds.join(', ') : '(nenhum)'}`);
+  console.log(
+    `    accessGroupIds: ${testJuridico.accessGroupIds.length ? testJuridico.accessGroupIds.join(', ') : '(nenhum)'}`,
+  );
 }
 
 seed()

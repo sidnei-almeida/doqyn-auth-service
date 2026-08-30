@@ -423,9 +423,7 @@ async function ensureActiveTenantMember(
       tenantId: tenantUuid,
       status: 'active',
       approvedAt: new Date(),
-      ...(member.jobTitle
-        ? { requestedJobTitleEncrypted: encryptField(member.jobTitle) }
-        : {}),
+      ...(member.jobTitle ? { requestedJobTitleEncrypted: encryptField(member.jobTitle) } : {}),
       ...(member.departmentText
         ? { requestedDepartmentEncrypted: encryptField(member.departmentText) }
         : {}),
@@ -439,9 +437,7 @@ async function ensureActiveTenantMember(
       rejectedByMembershipId: null,
       blockedAt: null,
       blockedByMembershipId: null,
-      ...(member.jobTitle
-        ? { requestedJobTitleEncrypted: encryptField(member.jobTitle) }
-        : {}),
+      ...(member.jobTitle ? { requestedJobTitleEncrypted: encryptField(member.jobTitle) } : {}),
       ...(member.departmentText
         ? { requestedDepartmentEncrypted: encryptField(member.departmentText) }
         : {}),

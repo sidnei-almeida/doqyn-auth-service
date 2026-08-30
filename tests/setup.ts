@@ -6,19 +6,40 @@ import { resetRateLimitStore } from '../src/security/rateLimit.js';
 
 const testEncryptionKey = randomBytes(32).toString('base64');
 
+const DEFAULT_TEST_DATABASE_URL =
+  'postgresql://doqyn_auth:doqyn_auth_password@localhost:5433/doqyn_auth_test';
+
+/**
+ * Recusa rodar fora de um banco de teste.
+ *
+ * A suíte apaga todas as tabelas a cada teste. Um banco apontado por engano para o ambiente de
+ * trabalho não daria erro nenhum — só o levaria junto, e em silêncio.
+ *
+ * Confere `process.env.DATABASE_URL`, que é o que o Prisma de fato usou, e não o que este arquivo
+ * gostaria de ter usado: era exatamente essa diferença que escondia o problema.
+ */
+function assertTestDatabase(databaseUrl: string): void {
+  const name = new URL(databaseUrl).pathname.replace(/^\//, '');
+  if (name.endsWith('_test')) return;
+
+  throw new Error(
+    `Suíte abortada: o banco "${name}" não termina em "_test", e o beforeEach apaga todas as ` +
+      'tabelas. Aponte TEST_DATABASE_URL para um banco de teste.',
+  );
+}
+
 export const TEST_ENV = {
   NODE_ENV: 'test',
   PORT: '4100',
-  DATABASE_URL:
-    process.env.TEST_DATABASE_URL ||
-    process.env.DATABASE_URL ||
-    'postgresql://doqyn_auth:doqyn_auth_password@localhost:5433/doqyn_auth',
+  /**
+   * O banco vem do ambiente que o `vitest.config.ts` montou — ver o comentário de lá.
+   *
+   * Repetir a escolha aqui seria pior que redundante: o Prisma já se conectou quando esta linha
+   * roda, então um valor diferente daria a impressão de mandar em algo que já foi decidido.
+   */
+  DATABASE_URL: process.env.DATABASE_URL || DEFAULT_TEST_DATABASE_URL,
   DATABASE_URL_DIRECT:
-    process.env.TEST_DATABASE_URL_DIRECT ||
-    process.env.DATABASE_URL_DIRECT ||
-    process.env.TEST_DATABASE_URL ||
-    process.env.DATABASE_URL ||
-    'postgresql://doqyn_auth:doqyn_auth_password@localhost:5433/doqyn_auth',
+    process.env.DATABASE_URL_DIRECT || process.env.DATABASE_URL || DEFAULT_TEST_DATABASE_URL,
   REDIS_ENABLED: 'false',
   RATE_LIMIT_REDIS_ENABLED: 'false',
   SESSION_COOKIE_NAME: 'doqyn_session',
@@ -51,6 +72,7 @@ export const TEST_ENV = {
 };
 
 beforeAll(async () => {
+  assertTestDatabase(process.env.DATABASE_URL ?? '');
   Object.assign(process.env, TEST_ENV);
   resetEnvCache();
   await prisma.$executeRawUnsafe(

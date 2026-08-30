@@ -313,5 +313,4 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     );
     return reply.send({ ok: true, ...result });
   });
-
 }

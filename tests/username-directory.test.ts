@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { prisma } from '../src/db/prisma.js';
@@ -215,6 +217,23 @@ describe('apelido — a única coluna de identidade em texto claro', () => {
       headers: INTERNAL,
     });
     expect(curinga.json().users).toEqual([]);
+  });
+
+  it('todo caminho de entrada nasce com apelido', () => {
+    const oauth = readFileSync(
+      resolve(process.cwd(), 'src/modules/oauth/oauth.accounts.service.ts'),
+      'utf8',
+    );
+    const invites = readFileSync(
+      resolve(process.cwd(), 'src/modules/invites/invites.service.ts'),
+      'utf8',
+    );
+
+    // Entrar pelo Google e aceitar convite não passam por formulário de cadastro, então nenhum
+    // dos dois escolhia apelido — e a conta nascia fora do diretório para sempre, porque não há
+    // tela de trocar handle depois.
+    expect(oauth).toContain('claimUsername(tx, undefined, normalizedEmail)');
+    expect(invites).toContain('claimUsername(tx, undefined, email)');
   });
 
   it('devolve apelido por lote, para quem já sabe os ids', async () => {

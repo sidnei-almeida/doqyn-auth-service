@@ -81,10 +81,7 @@ export async function finalizeSignupProvisioning(input: {
       metadata: { error: provision.error, statusCode: provision.statusCode },
     });
 
-    throw new ValidationError(
-      input.provisioningFailureMessage,
-      'TENANT_PROVISIONING_FAILED',
-    );
+    throw new ValidationError(input.provisioningFailureMessage, 'TENANT_PROVISIONING_FAILED');
   }
 
   const activated = await prisma.$transaction(async (tx) => {

@@ -70,10 +70,7 @@ export function assertNotSelfSensitive(
   targetMembershipId: string,
   targetUserId: string,
 ): void {
-  if (
-    targetMembershipId === actor.membership.membershipId ||
-    targetUserId === actor.userId
-  ) {
+  if (targetMembershipId === actor.membership.membershipId || targetUserId === actor.userId) {
     throw new ForbiddenError('Não é permitido executar esta operação em si mesmo.');
   }
 }

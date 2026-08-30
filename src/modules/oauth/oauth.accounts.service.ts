@@ -2,7 +2,12 @@ import { prisma } from '../../db/prisma.js';
 import { encryptField, hashLookup } from '../../security/crypto.js';
 import { normalizeEmail } from '../../utils/normalize.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
-import { findUserByEmailLookup, isUserLoginAllowed, toPublicUser } from '../users/users.service.js';
+import {
+  claimUsername,
+  findUserByEmailLookup,
+  isUserLoginAllowed,
+  toPublicUser,
+} from '../users/users.service.js';
 import type { PublicUser } from '../users/users.schemas.js';
 import type { OAuthIdentity, OAuthPostLoginStatus } from './oauth.types.js';
 import { redactEmail } from './oauth.config.js';
@@ -44,6 +49,10 @@ async function createOAuthUser(identity: OAuthIdentity): Promise<PublicUser> {
         emailLookupHash,
         firstNameEncrypted: firstName ? encryptField(firstName) : null,
         lastNameEncrypted: lastName ? encryptField(lastName) : null,
+        // Quem entra pelo Google ou pela Microsoft não escolhe apelido em formulário nenhum, e
+        // sem ele a conta nasce invisível ao diretório — para sempre, porque não há tela de
+        // trocar handle depois. Derivado do e-mail é o mesmo tratamento do backfill.
+        username: await claimUsername(tx, undefined, normalizedEmail),
         status: 'pending_verification',
         emailVerified: identity.emailVerified,
       },

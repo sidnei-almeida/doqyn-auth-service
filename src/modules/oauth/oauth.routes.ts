@@ -1,9 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { extractRequestContext } from '../../security/requestContext.js';
-import {
-  getSessionTtlSeconds,
-  setSessionCookie,
-} from '../../security/cookies.js';
+import { getSessionTtlSeconds, setSessionCookie } from '../../security/cookies.js';
 import {
   buildOAuthFrontendRedirect,
   completeOAuthCallback,

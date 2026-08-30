@@ -165,7 +165,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({
         ok: false,
         code: result.code,
-        message: AUTH_ERROR_MESSAGES[result.code as keyof typeof AUTH_ERROR_MESSAGES] ?? 'Sessão inválida.',
+        message:
+          AUTH_ERROR_MESSAGES[result.code as keyof typeof AUTH_ERROR_MESSAGES] ??
+          'Sessão inválida.',
       });
     }
 
@@ -405,11 +407,15 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     assertEmailChangeEnabled();
     const token = getSessionTokenFromRequest(request);
     if (!token) {
-      return reply.status(401).send({ ok: false, message: 'Não autenticado.', code: 'UNAUTHORIZED' });
+      return reply
+        .status(401)
+        .send({ ok: false, message: 'Não autenticado.', code: 'UNAUTHORIZED' });
     }
     const sessionResult = await validateSessionByToken(token);
     if (!sessionResult.valid) {
-      return reply.status(401).send({ ok: false, message: 'Sessão inválida.', code: 'INVALID_SESSION' });
+      return reply
+        .status(401)
+        .send({ ok: false, message: 'Sessão inválida.', code: 'INVALID_SESSION' });
     }
     const status = await getEmailChangeStatus(sessionResult.user.id);
     return reply.send({ ok: true, ...status });
@@ -419,11 +425,15 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     assertEmailChangeEnabled();
     const token = getSessionTokenFromRequest(request);
     if (!token) {
-      return reply.status(401).send({ ok: false, message: 'Não autenticado.', code: 'UNAUTHORIZED' });
+      return reply
+        .status(401)
+        .send({ ok: false, message: 'Não autenticado.', code: 'UNAUTHORIZED' });
     }
     const sessionResult = await validateSessionByToken(token);
     if (!sessionResult.valid) {
-      return reply.status(401).send({ ok: false, message: 'Sessão inválida.', code: 'INVALID_SESSION' });
+      return reply
+        .status(401)
+        .send({ ok: false, message: 'Sessão inválida.', code: 'INVALID_SESSION' });
     }
     const body = requestEmailChangeSchema.parse(request.body ?? {});
     const ctx = extractRequestContext(request);

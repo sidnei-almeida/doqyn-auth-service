@@ -15,6 +15,7 @@ import { assertCanGrantRoles, resolveTenantScope } from '../admin/adminAuthoriza
 import type { AdminActor } from '../admin/admin.types.js';
 import { setMembershipRoles } from '../memberships/memberships.service.js';
 import {
+  claimUsername,
   findUserByEmailLookup,
   findUserById,
   getUserCredential,
@@ -382,6 +383,10 @@ export async function acceptInvite(
           lastNameEncrypted: encryptField(lastName),
           whatsappEncrypted: encryptField(whatsapp!),
           whatsappLookupHash: hashLookup(whatsapp!),
+          // Aceitar convite é o caminho principal de entrada num tenant, e não passa por
+          // formulário de cadastro: sem isto, todo membro convidado nascia sem apelido e fora
+          // do diretório.
+          username: await claimUsername(tx, undefined, email),
           status: 'active',
         },
       });

@@ -8,12 +8,7 @@ import {
   inviteIdParamSchema,
   inviteTokenParamSchema,
 } from './invites.schemas.js';
-import {
-  acceptInvite,
-  createInvite,
-  getInviteByToken,
-  revokeInvite,
-} from './invites.service.js';
+import { acceptInvite, createInvite, getInviteByToken, revokeInvite } from './invites.service.js';
 
 export async function inviteRoutes(app: FastifyInstance): Promise<void> {
   app.post('/auth/invites', { preHandler: requireAdminActor }, async (request, reply) => {

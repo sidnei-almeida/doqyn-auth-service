@@ -1,4 +1,11 @@
-import type { AuthAccessRequest, AuthMembership, AuthNotificationPreference, AuthTenant, AuthTermsAcceptance, AuthUser } from '@prisma/client';
+import type {
+  AuthAccessRequest,
+  AuthMembership,
+  AuthNotificationPreference,
+  AuthTenant,
+  AuthTermsAcceptance,
+  AuthUser,
+} from '@prisma/client';
 import { decryptField } from '../../security/crypto.js';
 import { toPublicUser } from '../users/users.service.js';
 
@@ -185,7 +192,8 @@ export function serializeAdminAccessRequest(input: {
     decision:
       input.request.decidedAt || input.request.decidedByMembershipId
         ? {
-            decidedAt: input.request.decidedAt?.toISOString() ?? input.request.updatedAt.toISOString(),
+            decidedAt:
+              input.request.decidedAt?.toISOString() ?? input.request.updatedAt.toISOString(),
             decidedByMembershipId: input.request.decidedByMembershipId,
             status: input.request.status,
           }

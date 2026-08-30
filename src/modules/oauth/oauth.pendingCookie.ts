@@ -7,10 +7,7 @@ const OAUTH_PENDING_TTL_SECONDS = 600;
 
 export type { OAuthPendingPayload };
 
-export function setOAuthPendingCookie(
-  reply: FastifyReply,
-  payload: OAuthPendingPayload,
-): void {
+export function setOAuthPendingCookie(reply: FastifyReply, payload: OAuthPendingPayload): void {
   const encrypted = encryptField(JSON.stringify(payload));
   reply.setCookie(OAUTH_PENDING_COOKIE, encrypted, {
     httpOnly: true,

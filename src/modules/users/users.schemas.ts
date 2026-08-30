@@ -28,6 +28,16 @@ export const publicUserSchema = z.object({
   avatarVersion: z.number().int().nonnegative().optional(),
   avatarUpdatedAt: z.string().datetime().nullable().optional(),
   avatarStatus: z.enum(['active', 'removed']).nullable().optional(),
+  /**
+   * O apelido público, e se ele aparece na busca entre empresas.
+   *
+   * Vão aqui porque a pessoa precisa poder ver os dois. O handle é escolhido no cadastro mas pode
+   * sair diferente — `claimUsername` acrescenta sufixo quando colide —, e é por ele que gente de
+   * outra empresa a encontra: não mostrá-lo deixava alguém sendo procurado por um nome que nunca
+   * soube que tinha.
+   */
+  username: z.string().nullable().optional(),
+  usernameDiscoverable: z.boolean().optional(),
 });
 
 export type PublicUser = z.infer<typeof publicUserSchema>;

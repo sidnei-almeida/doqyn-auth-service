@@ -13,7 +13,8 @@ import {
   revokeUserSessionsAdmin,
   updateOwnProfile,
 } from './account.service.js';
-import { updateOwnProfileSchema } from './account.schemas.js';
+import { updateDirectoryVisibilitySchema, updateOwnProfileSchema } from './account.schemas.js';
+import { setUsernameDiscoverable } from '../users/users.service.js';
 
 export async function accountRoutes(app: FastifyInstance): Promise<void> {
   app.post(
@@ -35,6 +36,24 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
     const user = await updateOwnProfile(authUser.id, body, ctx);
     return reply.send({ ok: true, user });
   });
+
+  /**
+   * Sair da busca entre empresas, ou voltar para ela.
+   *
+   * A coluna nascia `true` e não tinha desligamento: quem ganhou apelido foi inscrito num
+   * diretório sem ter dito que queria. O handle continua existindo em qualquer caso — ele é a
+   * identidade de quem já a encontrou antes.
+   */
+  app.patch(
+    '/auth/account/directory-visibility',
+    { preHandler: requireSession },
+    async (request, reply) => {
+      const body = updateDirectoryVisibilitySchema.parse(request.body ?? {});
+      const authUser = (request as AuthenticatedRequest).authUser!;
+      const user = await setUsernameDiscoverable(authUser.id, body.discoverable);
+      return reply.send({ ok: true, user });
+    },
+  );
 
   app.post(
     '/auth/admin/users/:userId/deactivate',

@@ -219,6 +219,42 @@ describe('apelido — a única coluna de identidade em texto claro', () => {
     expect(curinga.json().users).toEqual([]);
   });
 
+  it('a pessoa vê o próprio apelido e consegue sair da busca', async () => {
+    const user = await createTestUser('visibilidade@example.com', 'Senha!12345', {
+      firstName: 'Olívia',
+      lastName: 'Braga',
+    });
+    await prisma.authUser.update({ where: { id: user.id }, data: { username: 'olivia.braga' } });
+
+    const { toPublicUser, setUsernameDiscoverable } =
+      await import('../src/modules/users/users.service.js');
+
+    // O handle é escolhido no cadastro mas pode sair com sufixo quando colide. Não mostrá-lo
+    // deixava alguém sendo procurado por um nome que nunca soube que tinha.
+    const atual = await prisma.authUser.findUniqueOrThrow({ where: { id: user.id } });
+    expect(toPublicUser(atual)).toMatchObject({
+      username: 'olivia.braga',
+      usernameDiscoverable: true,
+    });
+
+    const saiu = await setUsernameDiscoverable(user.id, false);
+    expect(saiu.usernameDiscoverable).toBe(false);
+
+    // Sair da busca não apaga o handle: ele é a identidade de quem já a encontrou antes.
+    expect(saiu.username).toBe('olivia.braga');
+
+    const busca = await app.inject({
+      method: 'GET',
+      url: '/internal/users/search?q=olivia',
+      headers: INTERNAL,
+    });
+    expect(busca.json().users).toEqual([]);
+
+    // E voltar é o mesmo caminho, sem recuperar handle nenhum porque nada se perdeu.
+    const voltou = await setUsernameDiscoverable(user.id, true);
+    expect(voltou.usernameDiscoverable).toBe(true);
+  });
+
   it('todo caminho de entrada nasce com apelido', () => {
     const oauth = readFileSync(
       resolve(process.cwd(), 'src/modules/oauth/oauth.accounts.service.ts'),

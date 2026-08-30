@@ -20,7 +20,31 @@ export function toPublicUser(user: AuthUser): PublicUser {
     ...(user.avatarUpdatedAt ? { avatarUpdatedAt: user.avatarUpdatedAt.toISOString() } : {}),
     avatarStatus:
       user.avatarStatus === 'active' || user.avatarStatus === 'removed' ? user.avatarStatus : null,
+    username: user.username ?? null,
+    usernameDiscoverable: user.usernameDiscoverable,
   };
+}
+
+/**
+ * Entrar ou sair da busca entre empresas.
+ *
+ * A coluna nascia `true` e não havia como desligá-la: quem ganhou handle foi inscrito num
+ * diretório sem ter dito que queria. Ter identificador e estar num diretório são coisas
+ * diferentes, e esta é a única que a pessoa decide.
+ *
+ * Sair não apaga o handle. Ele continua sendo a identidade de quem já a encontrou antes, e
+ * apagá-lo quebraria os envios em curso — o que muda é só aparecer ou não numa busca nova.
+ */
+export async function setUsernameDiscoverable(
+  userId: string,
+  discoverable: boolean,
+): Promise<PublicUser> {
+  const updated = await prisma.authUser.update({
+    where: { id: userId },
+    data: { usernameDiscoverable: discoverable },
+  });
+
+  return toPublicUser(updated);
 }
 
 export interface CreateUserInput {

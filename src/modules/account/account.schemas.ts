@@ -14,3 +14,15 @@ export const updateOwnProfileSchema = z.object({
 });
 
 export type UpdateOwnProfileInput = z.infer<typeof updateOwnProfileSchema>;
+
+/**
+ * Entrar ou sair da busca entre empresas.
+ *
+ * Um booleano explícito, e não um "alternar": alternar depende do estado que o cliente acha que
+ * tem, e duas telas abertas se desfariam uma à outra.
+ */
+export const updateDirectoryVisibilitySchema = z.object({
+  discoverable: z.boolean(),
+});
+
+export type UpdateDirectoryVisibilityInput = z.infer<typeof updateDirectoryVisibilitySchema>;

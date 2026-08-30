@@ -59,7 +59,20 @@ export async function claimUsername(
 ): Promise<string> {
   const desired = chosen?.trim() ? normalizeUsername(chosen) : suggestUsernameFromEmail(email);
 
-  const base = validateUsernameShape(desired) ? suggestUsernameFromEmail(email) : desired;
+  /**
+   * A queda para o e-mail não resolve quando é o próprio e-mail que é reservado.
+   *
+   * `suporte@empresa.com` derivava `suporte`, a validação recusava, e a "queda" recalculava a
+   * mesma string — devolvendo o handle `@suporte` a quem se cadastrasse com aquele endereço.
+   * É exatamente o phishing que a lista de reservados existe para impedir: quem recebe um
+   * documento de "suporte" supõe que veio do DOQYN.
+   *
+   * O prefixo é a saída, e não um sufixo numérico: `suporte2` continua lendo como suporte.
+   */
+  const fromEmail = suggestUsernameFromEmail(email);
+  const fallback = validateUsernameShape(fromEmail) ? `user.${fromEmail}`.slice(0, 32) : fromEmail;
+
+  const base = validateUsernameShape(desired) ? fallback : desired;
 
   const free = await tx.authUser.findUnique({ where: { username: base } });
   if (!free) return base;
@@ -251,12 +264,25 @@ export async function searchUsersByUsernamePrefix(
     avatarStatus: 'active' | 'removed' | null;
   }>
 > {
-  const normalized = prefix.trim().toLowerCase();
+  /**
+   * O prefixo é normalizado **e** escapado, e as duas coisas são necessárias.
+   *
+   * Normalizar tira o que não pode existir num handle, `%` inclusive. Mas `_` é caractere válido
+   * de handle e é curinga de `LIKE`, então sobreviveria à normalização e continuaria casando
+   * qualquer caractere: buscar `__` devolvia oito contas quaisquer, com e-mail, passando pela
+   * trava de dois caracteres que existe justamente contra isso.
+   *
+   * O Postgres usa a barra invertida como escape padrão de `LIKE`, então escapar aqui basta —
+   * o `startsWith` do Prisma monta `LIKE $1 || '%'` sem cláusula `ESCAPE` própria.
+   */
+  const normalized = normalizeUsername(prefix);
   if (normalized.length < 2) return [];
+
+  const pattern = normalized.replace(/[\\_%]/g, (char) => `\\${char}`);
 
   const users = await prisma.authUser.findMany({
     where: {
-      username: { startsWith: normalized },
+      username: { startsWith: pattern },
       usernameDiscoverable: true,
       status: 'active',
     },

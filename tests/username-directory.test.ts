@@ -153,6 +153,70 @@ describe('apelido — a única coluna de identidade em texto claro', () => {
     ).rejects.toThrow();
   });
 
+  it('e-mail reservado não vira handle reservado', async () => {
+    const { claimUsername } = await import('../src/modules/users/users.service.js');
+
+    // `suporte@empresa.com` derivava `suporte`, a validação recusava, e a queda recalculava a
+    // mesma string — entregando `@suporte` a quem se cadastrasse com aquele endereço. Um
+    // documento vindo de "suporte" parece vir do DOQYN, que é o phishing que a lista impede.
+    for (const email of ['suporte@empresa.com', 'admin@x.com', 'api@y.com']) {
+      const handle = await claimUsername(prisma, undefined, email);
+      expect(validateUsernameShape(handle)).toBeNull();
+    }
+  });
+
+  it('o handle escolhido reservado também cai em algo válido', async () => {
+    const { claimUsername } = await import('../src/modules/users/users.service.js');
+
+    const handle = await claimUsername(prisma, 'suporte', 'pessoa.comum@example.com');
+    expect(validateUsernameShape(handle)).toBeNull();
+  });
+
+  it('curinga de LIKE no prefixo não devolve o cadastro', async () => {
+    const alvo = await createTestUser('curinga.alvo@example.com', 'Senha!12345', {
+      firstName: 'Nina',
+      lastName: 'Prado',
+    });
+    await prisma.authUser.update({ where: { id: alvo.id }, data: { username: 'nina.prado' } });
+
+    // `_` é caractere válido de handle **e** curinga de um caractere no `LIKE`. Sobrevivia à
+    // normalização e casava qualquer coisa: `__` passava pela trava de dois caracteres e
+    // devolvia contas quaisquer, com e-mail.
+    for (const q of ['__', '%a', '%%']) {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/internal/users/search?q=${encodeURIComponent(q)}`,
+        headers: INTERNAL,
+      });
+      expect(response.json().users).toEqual([]);
+    }
+  });
+
+  it('sublinhado de verdade continua achando quem o tem no apelido', async () => {
+    const user = await createTestUser('sublinhado@example.com', 'Senha!12345', {
+      firstName: 'Caio',
+      lastName: 'Melo',
+    });
+    await prisma.authUser.update({ where: { id: user.id }, data: { username: 'caio_melo' } });
+
+    // Escapar não pode custar a busca legítima: quem tem `_` no handle continua sendo achado
+    // por ele, e só por ele.
+    const achado = await app.inject({
+      method: 'GET',
+      url: '/internal/users/search?q=caio_',
+      headers: INTERNAL,
+    });
+    expect(achado.json().users.map((u: { username: string }) => u.username)).toEqual(['caio_melo']);
+
+    // E o curinga não vale como atalho para o mesmo alvo.
+    const curinga = await app.inject({
+      method: 'GET',
+      url: '/internal/users/search?q=caio%5F'.replace('%5F', '_') + 'x',
+      headers: INTERNAL,
+    });
+    expect(curinga.json().users).toEqual([]);
+  });
+
   it('devolve apelido por lote, para quem já sabe os ids', async () => {
     const a = await createTestUser('lote.um@example.com', 'Senha!12345', {
       firstName: 'Olga',

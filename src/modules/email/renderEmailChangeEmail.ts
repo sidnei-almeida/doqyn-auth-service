@@ -1,3 +1,15 @@
+import {
+  emailButton,
+  emailCode,
+  emailFine,
+  emailRow,
+  emailRows,
+  emailText,
+  escapeHtml,
+  plural,
+  renderEmailLayout,
+} from './emailLayout.js';
+
 export type EmailChangeTemplateInput = {
   currentEmail: string;
   newEmail: string;
@@ -7,97 +19,57 @@ export type EmailChangeTemplateInput = {
   expiresInHours: number;
 };
 
+/**
+ * Troca de endereço — código e link, como a confirmação de cadastro.
+ *
+ * A diferença de conteúdo é o par de endereços em destaque. Trocar o e-mail de acesso é
+ * destrutivo: quem recebe isto sem ter pedido precisa ver, de relance, de onde para onde a conta
+ * está indo. Por isso os dois aparecem como linha de registro antes de qualquer ação.
+ */
 export function renderEmailChangeEmail(input: EmailChangeTemplateInput): {
   subject: string;
   text: string;
   html: string;
 } {
-  const subject = 'Confirme seu novo e-mail no DOQYN';
+  const formattedCode = `${input.code.slice(0, 3)} ${input.code.slice(3)}`;
+  const subject = `${formattedCode} é seu código para trocar o e-mail no DOQYN`;
+
   const text = [
     'Recebemos uma solicitação para alterar o e-mail da sua conta no DOQYN.',
     '',
     `E-mail atual: ${input.currentEmail}`,
     `Novo e-mail: ${input.newEmail}`,
     '',
-    `Seu código: ${formatCode(input.code)}`,
+    `Seu código: ${formattedCode}`,
     '',
     'Ou confirme direto por este link:',
     input.confirmUrl,
     '',
-    `O código expira em ${input.expiresInMinutes} minutos; o link, em ${input.expiresInHours} hora(s).`,
-    'Se você não solicitou esta alteração, ignore este e-mail.',
+    `O código expira em ${plural(input.expiresInMinutes, 'minuto', 'minutos')}; o link, em ${plural(input.expiresInHours, 'hora', 'horas')}.`,
+    'Se você não solicitou esta alteração, ignore este e-mail — o endereço não muda sozinho.',
   ].join('\n');
 
-  const html = `
-<!DOCTYPE html>
-<html lang="pt-BR">
-  <body style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;color:#1f2933;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f6f8;padding:32px 16px;">
-      <tr>
-        <td align="center">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:12px;border:1px solid #e5e7eb;">
-            <tr>
-              <td style="padding:28px 32px 12px;">
-                <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#6b7280;">Confirmação de e-mail</p>
-                <h1 style="margin:0;font-size:22px;line-height:1.35;color:#111827;">Confirme seu novo endereço</h1>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:8px 32px 0;">
-                <p style="margin:0;font-size:15px;line-height:1.6;color:#374151;">
-                  Você solicitou alterar o e-mail da sua conta de
-                  <strong>${escapeHtml(input.currentEmail)}</strong> para
-                  <strong>${escapeHtml(input.newEmail)}</strong>. Digite o código abaixo na tela de
-                  confirmação.
-                </p>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:20px 32px 4px;" align="center">
-                <p style="margin:0;font-size:32px;line-height:1.2;font-weight:700;letter-spacing:0.18em;color:#111827;font-family:'Courier New',Courier,monospace;">
-                  ${escapeHtml(formatCode(input.code))}
-                </p>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:16px 32px 8px;" align="center">
-                <a href="${escapeHtml(input.confirmUrl)}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:14px 24px;border-radius:8px;">
-                  Confirmar sem digitar
-                </a>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:8px 32px 24px;">
-                <p style="margin:0;font-size:13px;line-height:1.6;color:#6b7280;">
-                  Link alternativo:<br />
-                  <a href="${escapeHtml(input.confirmUrl)}" style="color:#2563eb;word-break:break-all;">${escapeHtml(input.confirmUrl)}</a>
-                </p>
-                <p style="margin:16px 0 0;font-size:12px;line-height:1.5;color:#9ca3af;">
-                  O código expira em ${input.expiresInMinutes} minutos; o link, em ${input.expiresInHours} hora(s).<br />
-                  Se não foi você, ignore este e-mail.
-                </p>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>
-  `.trim();
+  const html = renderEmailLayout({
+    eyebrow: 'Troca de e-mail',
+    title: 'Confirme seu novo endereço',
+    blocks: [
+      emailText('O acesso da sua conta no DOQYN passará a ser por este endereço.'),
+      emailRows([
+        emailRow('E-mail atual', input.currentEmail),
+        emailRow('Novo e-mail', input.newEmail),
+      ]),
+      emailText('Digite o código abaixo na tela de confirmação.'),
+      emailCode(input.code),
+      emailFine(`Expira em ${plural(input.expiresInMinutes, 'minuto', 'minutos')}.`),
+      emailButton('Confirmar sem digitar', input.confirmUrl),
+      emailFine(
+        `Se o botão não abrir, use este endereço — ele vale por ${plural(input.expiresInHours, 'hora', 'horas')}:<br />` +
+          `<a href="${escapeHtml(input.confirmUrl)}" style="color:#0e6e6a;word-break:break-all;">${escapeHtml(input.confirmUrl)}</a>`,
+      ),
+    ],
+    footNote:
+      'Você recebeu este e-mail porque ele foi indicado como novo endereço de uma conta DOQYN. Se não foi você, ignore esta mensagem — nada muda sem esta confirmação, e o endereço atual continua valendo.',
+  });
 
   return { subject, text, html };
-}
-
-/** `123 456` — o espaço no meio é o que torna seis dígitos legíveis de relance. */
-function formatCode(code: string): string {
-  return `${code.slice(0, 3)} ${code.slice(3)}`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }

@@ -1,3 +1,15 @@
+import {
+  emailButton,
+  emailFine,
+  emailRow,
+  emailRows,
+  emailText,
+  escapeHtml,
+  plural,
+  renderEmailLayout,
+  strong,
+} from './emailLayout.js';
+
 export type InviteEmailTemplateInput = {
   inviterName: string;
   inviterEmail: string;
@@ -6,6 +18,14 @@ export type InviteEmailTemplateInput = {
   expiresInDays: number;
 };
 
+/**
+ * Convite para entrar numa empresa.
+ *
+ * Este é o e-mail de maior exposição: quem recebe pode nunca ter ouvido falar do DOQYN, e a
+ * primeira pergunta é "quem me mandou isto". Por isso quem convidou e para onde aparecem como
+ * linha de registro, com nome e e-mail — sem isso o convite lê como spam, por mais bonito que
+ * seja o resto.
+ */
 export function renderInviteEmail(input: InviteEmailTemplateInput): {
   subject: string;
   text: string;
@@ -20,67 +40,32 @@ export function renderInviteEmail(input: InviteEmailTemplateInput): {
     'Para aceitar o convite e criar seu acesso, use o link abaixo:',
     input.inviteUrl,
     '',
-    `Este convite expira em ${input.expiresInDays} dia(s).`,
+    `Este convite expira em ${plural(input.expiresInDays, 'dia', 'dias')}.`,
     '',
     'Se você não esperava este convite, ignore este e-mail.',
   ].join('\n');
 
-  const html = `
-<!DOCTYPE html>
-<html lang="pt-BR">
-  <body style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;color:#1f2933;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f6f8;padding:32px 16px;">
-      <tr>
-        <td align="center">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
-            <tr>
-              <td style="padding:28px 32px 12px;">
-                <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#6b7280;">Convite DOQYN</p>
-                <h1 style="margin:0;font-size:22px;line-height:1.35;color:#111827;">Você foi convidado para ${escapeHtml(company)}</h1>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:8px 32px 0;">
-                <p style="margin:0;font-size:15px;line-height:1.6;color:#374151;">
-                  <strong>${escapeHtml(input.inviterName)}</strong>
-                  (<a href="mailto:${escapeHtml(input.inviterEmail)}" style="color:#2563eb;text-decoration:none;">${escapeHtml(input.inviterEmail)}</a>)
-                  convidou você para acessar documentos e fluxos da empresa no DOQYN.
-                </p>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:24px 32px 8px;" align="center">
-                <a href="${escapeHtml(input.inviteUrl)}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:14px 24px;border-radius:8px;">
-                  Aceitar convite
-                </a>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:8px 32px 24px;">
-                <p style="margin:0;font-size:13px;line-height:1.6;color:#6b7280;">
-                  Ou copie e cole este link no navegador:<br />
-                  <a href="${escapeHtml(input.inviteUrl)}" style="color:#2563eb;word-break:break-all;">${escapeHtml(input.inviteUrl)}</a>
-                </p>
-                <p style="margin:16px 0 0;font-size:12px;line-height:1.5;color:#9ca3af;">
-                  Este convite expira em ${input.expiresInDays} dia(s). Se você não esperava este e-mail, ignore-o com segurança.
-                </p>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>
-  `.trim();
+  const html = renderEmailLayout({
+    eyebrow: 'Convite',
+    title: `Você foi convidado para ${company}`,
+    blocks: [
+      emailText(
+        `${strong(input.inviterName)} convidou você para participar de ${strong(company)} no DOQYN — ` +
+          'a plataforma onde a empresa guarda, classifica e assina os documentos dela.',
+      ),
+      emailRows([
+        emailRow('Quem convidou', `${input.inviterName} · ${input.inviterEmail}`),
+        emailRow('Empresa', company),
+      ]),
+      emailButton('Aceitar convite', input.inviteUrl),
+      emailFine(
+        `Se o botão não abrir, use este endereço — o convite vale por ${plural(input.expiresInDays, 'dia', 'dias')}:<br />` +
+          `<a href="${escapeHtml(input.inviteUrl)}" style="color:#0e6e6a;word-break:break-all;">${escapeHtml(input.inviteUrl)}</a>`,
+      ),
+    ],
+    footNote:
+      'Você recebeu este e-mail porque seu endereço foi convidado para uma empresa no DOQYN. Se não esperava este convite, ignore esta mensagem — nenhuma conta é criada sem que você aceite.',
+  });
 
   return { subject, text, html };
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }

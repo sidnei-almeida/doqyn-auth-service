@@ -311,3 +311,42 @@ describe('cadastro por formulário quando não há como entregar o código', () 
     expect(source.includes('assertSignupEmailDeliverable')).toBe(true);
   });
 });
+
+describe('login não pode matar o código que já está na caixa de entrada', () => {
+  let app2: FastifyInstance;
+
+  beforeAll(async () => {
+    Object.assign(process.env, { ...TEST_ENV, EMAIL_ENABLED: 'false' });
+    app2 = await buildApp();
+    await app2.ready();
+  });
+
+  afterAll(async () => {
+    await app2.close();
+  });
+
+  it('tentar entrar de novo preserva o código pendente', async () => {
+    resetRateLimitStore();
+    const user = await createUnverifiedUser('naorotaciona@ev.test', 'tenant_ev_norotate');
+    const ticket = issueEmailVerificationTicket(user.id);
+
+    const code = (await send(app2, ticket)).json().code as string;
+
+    // O intervalo de 60s escondia o defeito; recuá-lo é o que o expõe.
+    await prisma.authEmailVerification.updateMany({
+      where: { userId: user.id },
+      data: { sentAt: new Date(Date.now() - 10 * 60 * 1000) },
+    });
+
+    const blocked = await app2.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email: 'naorotaciona@ev.test', password: PASSWORD },
+    });
+    expect(blocked.statusCode).toBe(403);
+
+    // Sem `onlyIfMissing`, este código teria sido invalidado pelo login acima.
+    const confirmed = await confirm(app2, ticket, code);
+    expect(confirmed.statusCode).toBe(200);
+  });
+});

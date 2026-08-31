@@ -136,8 +136,21 @@ export function hashEmailChangeCode(userId: string, code: string): string {
   return hmacSha256(`email-change:${userId}:${code}`, getPasswordResetTokenSecret());
 }
 
+/**
+ * Rótulo de domínio no hash, e por que só aqui.
+ *
+ * `hashPasswordResetToken`, `hashInviteToken` e `hashEmailChangeToken` calculam todos
+ * `hmacSha256(token, segredo)` sem rótulo — o mesmo token produz o mesmo hash nos três. Não é
+ * explorável hoje: cada busca é na sua tabela, e 32 bytes aleatórios não colidem por acaso. Mas
+ * é frágil, e a correção custa uma string.
+ *
+ * O que impede corrigi-los agora é que mudar o hash invalida token vivo: convite dura sete dias, e
+ * quem tiver um na caixa de entrada deixaria de conseguir aceitá-lo. A confirmação de e-mail não
+ * tem esse problema — nasce com este deploy, sem uma linha em produção — então ela já entra com o
+ * rótulo. Os outros três ficam para uma janela em que dá para queimar os pendentes de propósito.
+ */
 export function hashEmailVerificationToken(token: string): string {
-  return hmacSha256(token, getPasswordResetTokenSecret());
+  return hmacSha256(`email-verification-token:${token}`, getPasswordResetTokenSecret());
 }
 
 /**
@@ -147,7 +160,7 @@ export function hashEmailVerificationToken(token: string): string {
  * conteúdo e a assinatura é tudo que impede alguém de escrever um com o `userId` alheio.
  */
 export function signVerificationTicket(payload: string): string {
-  return hmacSha256(payload, getPasswordResetTokenSecret());
+  return hmacSha256(`verification-ticket:${payload}`, getPasswordResetTokenSecret());
 }
 
 /**
@@ -158,7 +171,7 @@ export function signVerificationTicket(payload: string): string {
  * ataque, e impede que o código de uma conta case com a pendência de outra.
  */
 export function hashEmailVerificationCode(userId: string, code: string): string {
-  return hmacSha256(`${userId}:${code}`, getPasswordResetTokenSecret());
+  return hmacSha256(`email-verification-code:${userId}:${code}`, getPasswordResetTokenSecret());
 }
 
 export function hashIp(ip: string): string {

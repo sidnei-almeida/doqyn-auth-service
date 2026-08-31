@@ -98,7 +98,21 @@ export async function getEmailVerificationStatus(userId: string) {
  * Cada envio invalida o código anterior. Dois códigos válidos ao mesmo tempo dobrariam a superfície
  * de adivinhação e ainda deixariam a pessoa confusa sobre qual dos e-mails vale.
  */
-export async function sendEmailVerificationCode(userId: string, ipHash?: string) {
+export async function sendEmailVerificationCode(
+  userId: string,
+  ipHash?: string,
+  options?: {
+    /**
+     * Não emite código novo se já houver um vivo.
+     *
+     * O login usa isto. Sem a trava, cada tentativa de entrar rotacionava o código: quem se
+     * cadastrava, esperava o e-mail chegar, tentava entrar e então digitava o que recebeu levava
+     * "código incorreto" — porque aquele acabara de morrer — e ainda perdia uma das cinco
+     * tentativas. O intervalo de 60 segundos escondia o defeito, e só até ele passar.
+     */
+    onlyIfMissing?: boolean;
+  },
+) {
   if (ipHash) {
     await checkEmailVerificationSendRateLimit(ipHash, userId);
   }
@@ -114,12 +128,24 @@ export async function sendEmailVerificationCode(userId: string, ipHash?: string)
 
   const env = loadEnv();
 
+  const pending = await findPendingVerification(userId);
+
+  if (options?.onlyIfMissing && pending) {
+    const email = decryptField(user.emailEncrypted);
+    return {
+      ok: true as const,
+      message: `Já enviamos um código para ${email}. Confira sua caixa de entrada.`,
+      email,
+      expiresAt: pending.expiresAt.toISOString(),
+      emailSent: false,
+    };
+  }
+
   // O teto por linha existe além do teto por IP: quem troca de IP ainda não consegue despejar
   // e-mail na caixa de entrada de terceiro mais rápido que o intervalo mínimo.
-  const previous = await findPendingVerification(userId);
-  if (previous?.sentAt) {
+  if (pending?.sentAt) {
     const nextAllowedAt =
-      previous.sentAt.getTime() + env.EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS * 1000;
+      pending.sentAt.getTime() + env.EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS * 1000;
     if (Date.now() < nextAllowedAt) {
       throw new ValidationError(
         `Aguarde ${Math.ceil((nextAllowedAt - Date.now()) / 1000)} segundos para pedir outro código.`,

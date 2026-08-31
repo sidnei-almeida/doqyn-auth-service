@@ -171,12 +171,16 @@ export async function login(
       });
 
       // O código sai junto com a recusa: a pessoa acertou a senha, então já é ela, e obrigá-la a
-      // apertar "enviar" numa tela seguinte só adiciona um passo. O intervalo mínimo entre envios
-      // continua valendo, e é por isso que a falha aqui é silenciosa — quem tenta entrar duas
-      // vezes seguidas não pode ver a recusa virar erro.
+      // apertar "enviar" numa tela seguinte só adiciona um passo.
+      //
+      // `onlyIfMissing` é o que impede o tiro no pé: sem ele, tentar entrar rotacionava o código
+      // e matava o que já estava na caixa de entrada da pessoa. A falha é silenciosa porque uma
+      // recusa de envio não pode virar erro de login.
       const { sendEmailVerificationCode } =
         await import('../email-verification/emailVerification.service.js');
-      await sendEmailVerificationCode(user.id, ctx.ipHash).catch(() => undefined);
+      await sendEmailVerificationCode(user.id, ctx.ipHash, { onlyIfMissing: true }).catch(
+        () => undefined,
+      );
 
       const { issueEmailVerificationTicket } = await import('../../security/verificationTicket.js');
       return {

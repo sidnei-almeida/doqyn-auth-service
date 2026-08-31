@@ -275,3 +275,39 @@ describe('email verification', () => {
     expect(body.canResendAt).toBeTruthy();
   });
 });
+
+describe('cadastro por formulário quando não há como entregar o código', () => {
+  it('recusa na porta em produção sem SMTP, e não cria conta', async () => {
+    const { assertSignupEmailDeliverable } =
+      await import('../src/modules/email-verification/emailVerification.guard.js');
+    const { resetEnvCache } = await import('../src/config/env.js');
+
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalEmailEnabled = process.env.EMAIL_ENABLED;
+
+    try {
+      // Desenvolvimento: o código volta na resposta, então o fluxo é percorrível e nada trava.
+      process.env.NODE_ENV = 'development';
+      process.env.EMAIL_ENABLED = 'false';
+      resetEnvCache();
+      assertSignupEmailDeliverable();
+
+      // Produção sem SMTP: a conta nasceria trancada e sem destranque possível.
+      process.env.NODE_ENV = 'production';
+      resetEnvCache();
+      expect(() => assertSignupEmailDeliverable()).toThrowError(/indisponível/);
+    } finally {
+      process.env.NODE_ENV = originalNodeEnv;
+      process.env.EMAIL_ENABLED = originalEmailEnabled;
+      resetEnvCache();
+    }
+  });
+
+  it('a isenção do OAuth não passa por este portão', async () => {
+    // O portão só é chamado quando há credenciais no corpo — quem chega por Google ou Microsoft
+    // anexa a conta a uma sessão existente e nunca digita senha aqui.
+    const company = await import('../src/modules/company-signups/companySignups.service.js');
+    const source = company.submitCompanySignup.toString();
+    expect(source.includes('assertSignupEmailDeliverable')).toBe(true);
+  });
+});

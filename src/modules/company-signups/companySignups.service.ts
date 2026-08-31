@@ -3,6 +3,7 @@ import { prisma } from '../../db/prisma.js';
 import { encryptField, hashLookup } from '../../security/crypto.js';
 import { hashPassword, validatePasswordStrength } from '../../security/password.js';
 import { ConflictError, ValidationError } from '../../utils/errors.js';
+import { assertSignupEmailDeliverable } from '../email-verification/emailVerification.guard.js';
 import {
   maskTaxId,
   normalizeEmail,
@@ -54,6 +55,9 @@ export async function submitCompanySignup(
   const credentials = attachToUserId ? null : (input as CompanySignupInput);
 
   if (credentials) {
+    // Antes de gravar qualquer coisa: sem como entregar o código, a conta nasceria inalcançável.
+    assertSignupEmailDeliverable();
+
     const passwordError = validatePasswordStrength(credentials.password);
     if (passwordError) {
       throw new ValidationError(passwordError, 'WEAK_PASSWORD');

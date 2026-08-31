@@ -86,3 +86,10 @@ export class GoneError extends AppError {
     super(message, 410, code);
   }
 }
+
+/** Dependência externa ausente ou fora do ar — a ação vale, o serviço para ela é que não está. */
+export class ServiceUnavailableError extends AppError {
+  constructor(message: string, code = 'SERVICE_UNAVAILABLE') {
+    super(message, 503, code);
+  }
+}

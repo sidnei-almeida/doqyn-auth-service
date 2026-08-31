@@ -80,6 +80,7 @@ export async function getEmailVerificationStatus(userId: string) {
     pending: pending !== null,
     email: decryptField(user.emailEncrypted),
     expiresAt: pending?.expiresAt.toISOString(),
+    linkExpiresAt: pending?.tokenExpiresAt.toISOString(),
     attemptsLeft: pending ? Math.max(0, env.EMAIL_VERIFICATION_MAX_ATTEMPTS - pending.attempts) : 0,
     canResendAt: pending?.sentAt
       ? new Date(
@@ -132,6 +133,7 @@ export async function sendEmailVerificationCode(userId: string, ipHash?: string)
   const code = generateEmailVerificationCode();
   const token = generateEmailVerificationToken();
   const expiresAt = new Date(Date.now() + env.EMAIL_VERIFICATION_CODE_TTL_MINUTES * 60 * 1000);
+  const tokenExpiresAt = new Date(Date.now() + env.EMAIL_VERIFICATION_TTL_HOURS * 60 * 60 * 1000);
 
   const created = await prisma.authEmailVerification.create({
     data: {
@@ -139,6 +141,7 @@ export async function sendEmailVerificationCode(userId: string, ipHash?: string)
       codeHash: hashEmailVerificationCode(userId, code),
       tokenHash: hashEmailVerificationToken(token),
       expiresAt,
+      tokenExpiresAt,
     },
   });
 
@@ -148,6 +151,7 @@ export async function sendEmailVerificationCode(userId: string, ipHash?: string)
     code,
     confirmUrl,
     expiresInMinutes: env.EMAIL_VERIFICATION_CODE_TTL_MINUTES,
+    linkExpiresInHours: env.EMAIL_VERIFICATION_TTL_HOURS,
   });
 
   const sender = getPlatformSender();
@@ -299,7 +303,9 @@ export async function confirmEmailVerificationToken(token: string, ipHash?: stri
   if (verification.usedAt) {
     throw new GoneError('Este link já foi utilizado.', 'EMAIL_VERIFICATION_ALREADY_USED');
   }
-  if (verification.expiresAt <= new Date()) {
+  // O link tem prazo próprio, mais longo que o do código: quem o abre horas depois no celular
+  // ainda deve conseguir confirmar, mesmo que os 6 dígitos já não sirvam.
+  if (verification.tokenExpiresAt <= new Date()) {
     throw new GoneError('Este link expirou. Peça um novo código.', 'EMAIL_VERIFICATION_EXPIRED');
   }
 

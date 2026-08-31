@@ -1,7 +1,9 @@
 export type EmailChangeTemplateInput = {
   currentEmail: string;
   newEmail: string;
+  code: string;
   confirmUrl: string;
+  expiresInMinutes: number;
   expiresInHours: number;
 };
 
@@ -17,10 +19,12 @@ export function renderEmailChangeEmail(input: EmailChangeTemplateInput): {
     `E-mail atual: ${input.currentEmail}`,
     `Novo e-mail: ${input.newEmail}`,
     '',
-    'Para confirmar, acesse o link abaixo:',
+    `Seu código: ${formatCode(input.code)}`,
+    '',
+    'Ou confirme direto por este link:',
     input.confirmUrl,
     '',
-    `Este link expira em ${input.expiresInHours} hora(s).`,
+    `O código expira em ${input.expiresInMinutes} minutos; o link, em ${input.expiresInHours} hora(s).`,
     'Se você não solicitou esta alteração, ignore este e-mail.',
   ].join('\n');
 
@@ -43,14 +47,22 @@ export function renderEmailChangeEmail(input: EmailChangeTemplateInput): {
                 <p style="margin:0;font-size:15px;line-height:1.6;color:#374151;">
                   Você solicitou alterar o e-mail da sua conta de
                   <strong>${escapeHtml(input.currentEmail)}</strong> para
-                  <strong>${escapeHtml(input.newEmail)}</strong>.
+                  <strong>${escapeHtml(input.newEmail)}</strong>. Digite o código abaixo na tela de
+                  confirmação.
                 </p>
               </td>
             </tr>
             <tr>
-              <td style="padding:24px 32px 8px;" align="center">
+              <td style="padding:20px 32px 4px;" align="center">
+                <p style="margin:0;font-size:32px;line-height:1.2;font-weight:700;letter-spacing:0.18em;color:#111827;font-family:'Courier New',Courier,monospace;">
+                  ${escapeHtml(formatCode(input.code))}
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 32px 8px;" align="center">
                 <a href="${escapeHtml(input.confirmUrl)}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:14px 24px;border-radius:8px;">
-                  Confirmar novo e-mail
+                  Confirmar sem digitar
                 </a>
               </td>
             </tr>
@@ -61,7 +73,8 @@ export function renderEmailChangeEmail(input: EmailChangeTemplateInput): {
                   <a href="${escapeHtml(input.confirmUrl)}" style="color:#2563eb;word-break:break-all;">${escapeHtml(input.confirmUrl)}</a>
                 </p>
                 <p style="margin:16px 0 0;font-size:12px;line-height:1.5;color:#9ca3af;">
-                  Expira em ${input.expiresInHours} hora(s). Se não foi você, ignore este e-mail.
+                  O código expira em ${input.expiresInMinutes} minutos; o link, em ${input.expiresInHours} hora(s).<br />
+                  Se não foi você, ignore este e-mail.
                 </p>
               </td>
             </tr>
@@ -74,6 +87,11 @@ export function renderEmailChangeEmail(input: EmailChangeTemplateInput): {
   `.trim();
 
   return { subject, text, html };
+}
+
+/** `123 456` — o espaço no meio é o que torna seis dígitos legíveis de relance. */
+function formatCode(code: string): string {
+  return `${code.slice(0, 3)} ${code.slice(3)}`;
 }
 
 function escapeHtml(value: string): string {

@@ -2,6 +2,7 @@ export type EmailVerificationTemplateInput = {
   code: string;
   confirmUrl: string;
   expiresInMinutes: number;
+  linkExpiresInHours: number;
 };
 
 /**
@@ -25,7 +26,7 @@ export function renderEmailVerificationEmail(input: EmailVerificationTemplateInp
     'Ou confirme direto por este link:',
     input.confirmUrl,
     '',
-    `O código e o link expiram em ${input.expiresInMinutes} minutos.`,
+    `O código expira em ${input.expiresInMinutes} minutos; o link, em ${input.linkExpiresInHours} horas.`,
     'Se você não criou esta conta, ignore este e-mail.',
   ].join('\n');
 
@@ -71,7 +72,8 @@ export function renderEmailVerificationEmail(input: EmailVerificationTemplateInp
                   <a href="${escapeHtml(input.confirmUrl)}" style="color:#2563eb;word-break:break-all;">${escapeHtml(input.confirmUrl)}</a>
                 </p>
                 <p style="margin:16px 0 0;font-size:12px;line-height:1.5;color:#9ca3af;">
-                  Expira em ${input.expiresInMinutes} minutos. Se você não criou esta conta, ignore este e-mail.
+                  O código expira em ${input.expiresInMinutes} minutos; o link, em ${input.linkExpiresInHours} horas.<br />
+                  Se você não criou esta conta, ignore este e-mail.
                 </p>
               </td>
             </tr>

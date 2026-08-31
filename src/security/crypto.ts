@@ -131,6 +131,11 @@ export function hashEmailChangeToken(token: string): string {
   return hmacSha256(token, getPasswordResetTokenSecret());
 }
 
+/** Mesmo raciocínio de `hashEmailVerificationCode`: o código curto entra amarrado ao usuário. */
+export function hashEmailChangeCode(userId: string, code: string): string {
+  return hmacSha256(`email-change:${userId}:${code}`, getPasswordResetTokenSecret());
+}
+
 export function hashEmailVerificationToken(token: string): string {
   return hmacSha256(token, getPasswordResetTokenSecret());
 }

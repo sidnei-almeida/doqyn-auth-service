@@ -109,7 +109,13 @@ const envSchema = z
       .default('false')
       .transform((v) => v === 'true'),
     INVITE_TTL_DAYS: z.coerce.number().default(7),
+    // Prazo do link da troca de e-mail.
     EMAIL_CHANGE_TTL_HOURS: z.coerce.number().default(24),
+    // Prazo do código da troca de e-mail — os mesmos números da confirmação de cadastro, pelos
+    // mesmos motivos.
+    EMAIL_CHANGE_CODE_TTL_MINUTES: z.coerce.number().default(15),
+    EMAIL_CHANGE_MAX_ATTEMPTS: z.coerce.number().default(5),
+    EMAIL_CHANGE_RESEND_COOLDOWN_SECONDS: z.coerce.number().default(60),
     EMAIL_CHANGE_ENABLED: z
       .string()
       .optional()

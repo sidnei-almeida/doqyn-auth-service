@@ -192,7 +192,14 @@ model AuthEmailVerification {
   codeHash  String    @map("code_hash")
   tokenHash String    @unique @map("token_hash")
   attempts  Int       @default(0)
+  /// Prazo do código. Curto, porque seis dígitos são um segredo pequeno.
   expiresAt DateTime  @map("expires_at")
+  /// Prazo do link, e ele é bem mais longo.
+  ///
+  /// Dois prazos na mesma linha porque os dois segredos não valem o mesmo: 32 bytes aleatórios
+  /// não se adivinham, e quem lê o e-mail horas depois no celular ainda deve conseguir clicar.
+  /// Um prazo só forçaria escolher entre um código frouxo e um link inútil.
+  tokenExpiresAt DateTime @map("token_expires_at")
   usedAt    DateTime? @map("used_at")
   /// Quando o e-mail saiu — é daqui que o teto de reenvio se mede.
   sentAt    DateTime? @map("sent_at")
@@ -204,14 +211,23 @@ model AuthEmailVerification {
   @@map("auth_email_verifications")
 }
 
+/// Troca de endereço, com as mesmas duas formas do mesmo segredo da confirmação de cadastro —
+/// ver `AuthEmailVerification`, de onde estas colunas foram espelhadas.
 model AuthEmailChange {
   id                 String    @id @default(uuid()) @db.Uuid
   userId             String    @map("user_id") @db.Uuid
   newEmailEncrypted  String    @map("new_email_encrypted")
   newEmailLookupHash String    @map("new_email_lookup_hash")
+  codeHash           String    @map("code_hash")
   tokenHash          String    @unique @map("token_hash")
+  attempts           Int       @default(0)
+  /// Prazo do código.
   expiresAt          DateTime  @map("expires_at")
+  /// Prazo do link.
+  tokenExpiresAt     DateTime  @map("token_expires_at")
   usedAt             DateTime? @map("used_at")
+  /// Quando o e-mail saiu — é daqui que o teto de reenvio se mede.
+  sentAt             DateTime? @map("sent_at")
   createdAt          DateTime  @default(now()) @map("created_at")
 
   user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)

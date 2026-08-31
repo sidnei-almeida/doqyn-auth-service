@@ -36,12 +36,15 @@ import { changePasswordSchema } from '../change-password/changePassword.schemas.
 import {
   emailChangeTokenParamSchema,
   requestEmailChangeSchema,
+  confirmEmailChangeCodeSchema,
 } from '../email-change/emailChange.schemas.js';
 import {
   confirmEmailChange,
   getEmailChangeStatus,
   previewEmailChange,
   requestEmailChange,
+  confirmEmailChangeByCode,
+  resendEmailChange,
 } from '../email-change/emailChange.service.js';
 import { assertEmailChangeEnabled } from '../email-change/emailChange.guard.js';
 import {
@@ -471,6 +474,48 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const body = requestEmailChangeSchema.parse(request.body ?? {});
     const ctx = extractRequestContext(request);
     const result = await requestEmailChange(sessionResult.user.id, body, token, ctx.ipHash);
+    return reply.send(result);
+  });
+
+  // Confirmar digitando o código. Exige sessão porque trocar de e-mail é operação de quem já
+  // está dentro — ao contrário da confirmação de cadastro, onde o login é justamente o que está
+  // bloqueado.
+  app.post('/auth/account/email-change/confirm', async (request, reply) => {
+    assertEmailChangeEnabled();
+    const token = getSessionTokenFromRequest(request);
+    if (!token) {
+      return reply
+        .status(401)
+        .send({ ok: false, message: 'Não autenticado.', code: 'UNAUTHORIZED' });
+    }
+    const sessionResult = await validateSessionByToken(token);
+    if (!sessionResult.valid) {
+      return reply
+        .status(401)
+        .send({ ok: false, message: 'Sessão inválida.', code: 'INVALID_SESSION' });
+    }
+    const body = confirmEmailChangeCodeSchema.parse(request.body ?? {});
+    const ctx = extractRequestContext(request);
+    const result = await confirmEmailChangeByCode(sessionResult.user.id, body.code, ctx.ipHash);
+    return reply.send(result);
+  });
+
+  app.post('/auth/account/email-change/resend', async (request, reply) => {
+    assertEmailChangeEnabled();
+    const token = getSessionTokenFromRequest(request);
+    if (!token) {
+      return reply
+        .status(401)
+        .send({ ok: false, message: 'Não autenticado.', code: 'UNAUTHORIZED' });
+    }
+    const sessionResult = await validateSessionByToken(token);
+    if (!sessionResult.valid) {
+      return reply
+        .status(401)
+        .send({ ok: false, message: 'Sessão inválida.', code: 'INVALID_SESSION' });
+    }
+    const ctx = extractRequestContext(request);
+    const result = await resendEmailChange(sessionResult.user.id, ctx.ipHash);
     return reply.send(result);
   });
 

@@ -114,6 +114,11 @@ export async function checkEmailChangeConfirmRateLimit(ipHash: string): Promise<
   await checkLimit(`email-change-confirm:ip:${ipHash}`, 15);
 }
 
+/** Ver `checkEmailVerificationConfirmRateLimit`: soma-se ao contador por linha, não o substitui. */
+export async function checkEmailChangeCodeRateLimit(ipHash: string): Promise<void> {
+  await checkLimit(`email-change-code:ip:${ipHash}`, 20);
+}
+
 /**
  * Teto de envio, e ele protege terceiros antes de proteger a plataforma.
  *

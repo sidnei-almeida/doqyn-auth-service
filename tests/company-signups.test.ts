@@ -2,10 +2,10 @@ import { describe, it, expect, beforeAll, afterAll, vi, beforeEach } from 'vites
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { prisma } from '../src/db/prisma.js';
+import { findUserByEmailLookup } from '../src/modules/users/users.service.js';
 import { TEST_ENV } from './setup.js';
 import { hashLookup } from '../src/security/crypto.js';
 import { normalizeTaxId } from '../src/utils/normalize.js';
-import { extractCookie } from './helpers.js';
 import { DOQYN_TERMS_VERSION } from '../src/modules/terms/terms.constants.js';
 
 const mockFetch = vi.fn();
@@ -68,7 +68,11 @@ describe('company signups', () => {
     expect(body.tenant.tenantId).toMatch(/^company_/);
     expect(body.activeMembership.roles).toContain('company_admin');
     expect(body.activeMembership.roles).toContain('user');
-    expect(extractCookie(response.headers['set-cookie'] as string, 'doqyn_session')).toBeTruthy();
+    // Cadastro por formulário não abre sessão: o e-mail ainda é uma afirmação. O que volta é o
+    // passe para confirmar o código.
+    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(body.emailVerificationRequired).toBe(true);
+    expect(body.verificationTicket).toBeTruthy();
 
     const taxIdHash = hashLookup(normalizeTaxId(payload.taxId));
     const tenant = await prisma.authTenant.findFirst({ where: { taxIdHash } });
@@ -128,8 +132,11 @@ describe('company signups', () => {
   });
 
   it('cadastro sem aceite dos termos retorna TERMS_ACCEPTANCE_REQUIRED', async () => {
-    const { acceptedTerms: _acceptedTerms, acceptedTermsVersion: _version, ...withoutTerms } =
-      payload;
+    const {
+      acceptedTerms: _acceptedTerms,
+      acceptedTermsVersion: _version,
+      ...withoutTerms
+    } = payload;
 
     const response = await app.inject({
       method: 'POST',
@@ -172,8 +179,21 @@ describe('company signups', () => {
     expect(audits.length).toBeGreaterThan(0);
   });
 
-  it('login continua funcionando após signup', async () => {
+  it('login recusa até o e-mail ser confirmado, e passa depois', async () => {
     await app.inject({ method: 'POST', url: '/auth/company-signups', payload });
+
+    const blocked = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email: payload.email, password: payload.password },
+    });
+    expect(blocked.statusCode).toBe(403);
+    expect(blocked.json().code).toBe('EMAIL_NOT_VERIFIED');
+    // A senha estava certa, então o passe vem junto com a recusa.
+    expect(blocked.json().details.verificationTicket).toBeTruthy();
+
+    const user = await findUserByEmailLookup(payload.email);
+    await prisma.authUser.update({ where: { id: user!.id }, data: { emailVerified: true } });
 
     const login = await app.inject({
       method: 'POST',

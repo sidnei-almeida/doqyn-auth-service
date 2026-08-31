@@ -27,12 +27,21 @@ export type SignupSuccessBase = {
     status: string;
   };
   activeMembership: PublicMembership;
-  sessionToken: string;
+  /**
+   * Só existe quando o e-mail já está provado — hoje, quando o cadastro anexa uma conta que veio
+   * de Google ou Microsoft. Cadastro por formulário não abre sessão: o endereço ainda é uma
+   * afirmação, e entregar acesso aqui era o buraco que a verificação fecha.
+   */
+  sessionToken?: string;
+  /** Quando presente, a conta existe mas está trancada até o código do e-mail ser conferido. */
+  emailVerificationRequired?: true;
+  /** O passe que autoriza pedir e conferir o código sem sessão. */
+  verificationTicket?: string;
 };
 
 /**
- * Provisiona o tenant no app principal, ativa membership e abre sessão.
- * Compartilhado por signup individual e empresa.
+ * Provisiona o tenant no app principal, ativa membership e — só se o e-mail já estiver provado —
+ * abre sessão. Compartilhado por signup individual e empresa.
  */
 export async function finalizeSignupProvisioning(input: {
   created: CreatedSignupEntities;
@@ -108,12 +117,6 @@ export async function finalizeSignupProvisioning(input: {
   const { awaitTenantMemberSync } = await import('../../integrations/memberSync.js');
   await awaitTenantMemberSync(activated.membership.id);
 
-  const session = await createSession(input.created.user.id, input.ipHash, input.userAgentHash);
-  await prisma.authSession.update({
-    where: { sessionTokenHash: hashSessionToken(session.token) },
-    data: { activeMembershipId: activated.membership.id },
-  });
-
   const membershipWithRelations = await prisma.authMembership.findUniqueOrThrow({
     where: { id: activated.membership.id },
     include: {
@@ -123,9 +126,8 @@ export async function finalizeSignupProvisioning(input: {
     },
   });
 
-  return {
-    ok: true,
-    message: input.successMessage,
+  const base = {
+    ok: true as const,
     user: toPublicUser(input.created.user),
     tenant: {
       tenantId: activated.tenant.tenantId,
@@ -134,6 +136,43 @@ export async function finalizeSignupProvisioning(input: {
       status: activated.tenant.status,
     },
     activeMembership: toPublicMembership(membershipWithRelations),
+  };
+
+  // A empresa foi criada e o membership está ativo — o que falta é a prova de que o e-mail é de
+  // quem se cadastrou. Sem ela não há sessão: era exatamente assim que alguém abria conta com o
+  // endereço de outra pessoa e entrava no app no mesmo segundo.
+  //
+  // Quem anexou uma conta de Google ou Microsoft está isento; o provedor já fez a prova.
+  const { hasLinkedOAuthAccount } = await import('../users/users.service.js');
+  const emailAlreadyProven =
+    input.created.user.emailVerified || (await hasLinkedOAuthAccount(input.created.user.id));
+
+  if (!emailAlreadyProven) {
+    const { sendEmailVerificationCode } =
+      await import('../email-verification/emailVerification.service.js');
+    const { issueEmailVerificationTicket } = await import('../../security/verificationTicket.js');
+
+    // O envio não pode derrubar um cadastro que já criou empresa e membership. Se o e-mail não
+    // sair, a pessoa pede outro código pela tela de confirmação.
+    await sendEmailVerificationCode(input.created.user.id, input.ipHash).catch(() => undefined);
+
+    return {
+      ...base,
+      message: 'Conta criada. Confirme seu e-mail para entrar.',
+      emailVerificationRequired: true,
+      verificationTicket: issueEmailVerificationTicket(input.created.user.id),
+    };
+  }
+
+  const session = await createSession(input.created.user.id, input.ipHash, input.userAgentHash);
+  await prisma.authSession.update({
+    where: { sessionTokenHash: hashSessionToken(session.token) },
+    data: { activeMembershipId: activated.membership.id },
+  });
+
+  return {
+    ...base,
+    message: input.successMessage,
     sessionToken: session.token,
   };
 }

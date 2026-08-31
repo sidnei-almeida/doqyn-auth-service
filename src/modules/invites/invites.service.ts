@@ -388,6 +388,10 @@ export async function acceptInvite(
           // do diretório.
           username: await claimUsername(tx, undefined, email),
           status: 'active',
+          // Aceitar o convite prova o endereço: o token chegou pelo e-mail que foi enviado a ele,
+          // e ninguém mais o teria. É a mesma prova que o código de verificação busca, feita por
+          // outro caminho — pedi-la de novo seria repetir o que acabou de acontecer.
+          emailVerified: true,
         },
       });
       await tx.authCredential.create({

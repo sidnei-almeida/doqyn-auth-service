@@ -41,7 +41,10 @@ export interface IndividualSignupSuccess {
     status: string;
   };
   activeMembership: PublicMembership;
-  sessionToken: string;
+  /** Ausente quando o e-mail ainda não foi confirmado — ver `signupOrchestrator.ts`. */
+  sessionToken?: string;
+  emailVerificationRequired?: true;
+  verificationTicket?: string;
 }
 
 /**

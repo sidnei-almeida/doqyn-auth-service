@@ -154,6 +154,43 @@ export async function login(
     };
   }
 
+  // Senha confere, mas o e-mail ainda não foi provado: não há sessão daqui.
+  //
+  // O cadastro por formulário afirma um endereço, não demonstra ter acesso a ele — e sem esta
+  // porta qualquer pessoa abriria conta com o e-mail de outra e entraria no app. Quem chegou por
+  // Google ou Microsoft está isento: o provedor já fez essa prova.
+  if (!user.emailVerified) {
+    const { hasLinkedOAuthAccount } = await import('../users/users.service.js');
+    if (!(await hasLinkedOAuthAccount(user.id))) {
+      await recordLoginAttempt(emailLookupHash, ctx.ipHash, false, 'email_not_verified');
+      await logAuthAudit('login.failed', {
+        userId: user.id,
+        ipHash: ctx.ipHash,
+        userAgentHash: ctx.userAgentHash,
+        metadata: { reason: 'email_not_verified' },
+      });
+
+      // O código sai junto com a recusa: a pessoa acertou a senha, então já é ela, e obrigá-la a
+      // apertar "enviar" numa tela seguinte só adiciona um passo. O intervalo mínimo entre envios
+      // continua valendo, e é por isso que a falha aqui é silenciosa — quem tenta entrar duas
+      // vezes seguidas não pode ver a recusa virar erro.
+      const { sendEmailVerificationCode } =
+        await import('../email-verification/emailVerification.service.js');
+      await sendEmailVerificationCode(user.id, ctx.ipHash).catch(() => undefined);
+
+      const { issueEmailVerificationTicket } = await import('../../security/verificationTicket.js');
+      return {
+        success: false,
+        code: 'EMAIL_NOT_VERIFIED',
+        message: AUTH_ERROR_MESSAGES.EMAIL_NOT_VERIFIED,
+        statusCode: 403,
+        // O ticket viaja em `details` porque é isso que a rota já repassa ao cliente. Ele é o que
+        // autoriza pedir e conferir o código sem sessão, e só existe depois da senha certa.
+        details: { verificationTicket: issueEmailVerificationTicket(user.id) },
+      };
+    }
+  }
+
   const { listUserMemberships } = await import('../memberships/memberships.service.js');
   let memberships = await listUserMemberships(user.id);
   let activeMemberships = memberships.filter(

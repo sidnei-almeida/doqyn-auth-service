@@ -55,6 +55,8 @@ export interface CreateUserInput {
   temporaryPassword?: string;
   /** O apelido escolhido no cadastro. Ausente, um é derivado do e-mail. */
   username?: string;
+  /** Padrão `true` — ver o comentário em `createOrGetUser`. Explícito só para testes. */
+  emailVerified?: boolean;
 }
 
 export async function findUserByEmailLookup(email: string): Promise<AuthUser | null> {
@@ -141,6 +143,11 @@ export async function createOrGetUser(input: CreateUserInput): Promise<PublicUse
         whatsappLookupHash: whatsappNormalized ? hashLookup(whatsappNormalized) : null,
         username: await claimUsername(tx, input.username, normalizedEmail),
         status: 'active',
+        // Nasce confirmada, e a fronteira de confiança aqui é outra: esta função só é alcançável
+        // por `/internal/users`, atrás da chave interna — quem chama é a plataforma nomeando o
+        // endereço, não um formulário público onde qualquer um digita o e-mail de terceiro. É
+        // esse formulário que a verificação por código fecha.
+        emailVerified: input.emailVerified ?? true,
       },
     });
 
@@ -209,6 +216,19 @@ export async function updateUserEmail(userId: string, email: string): Promise<Pu
   });
 
   return toPublicUser(user);
+}
+
+/**
+ * Quem entrou por Google ou Microsoft não precisa confirmar de novo.
+ *
+ * A checagem é pelo vínculo, e não pela claim `emailVerified` da identidade, de propósito: o
+ * Entra só afirma o endereço com a claim opcional `xms_edov`, que nem todo app registration tem
+ * habilitada. Exigir a claim trancaria fora do app quem entra por conta corporativa da Microsoft
+ * — um login que funciona hoje. Ter um provedor ligado é a prova aceita aqui.
+ */
+export async function hasLinkedOAuthAccount(userId: string): Promise<boolean> {
+  const count = await prisma.authOAuthAccount.count({ where: { userId } });
+  return count > 0;
 }
 
 export function isUserLoginAllowed(status: AuthUserStatus): boolean {

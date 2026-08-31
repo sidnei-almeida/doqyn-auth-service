@@ -13,7 +13,7 @@ import type { TenantRole } from '@prisma/client';
 export async function createTestUser(
   email: string,
   password: string,
-  opts?: { firstName?: string; lastName?: string },
+  opts?: { firstName?: string; lastName?: string; emailVerified?: boolean },
 ) {
   const normalized = normalizeEmail(email);
   const passwordHash = await hashPassword(password);
@@ -25,6 +25,9 @@ export async function createTestUser(
       firstNameEncrypted: opts?.firstName ? encryptField(opts.firstName) : null,
       lastNameEncrypted: opts?.lastName ? encryptField(opts.lastName) : null,
       status: 'active',
+      // O login recusa e-mail não confirmado. A fixture representa conta em uso, então nasce
+      // confirmada; quem testa a própria verificação passa `emailVerified: false`.
+      emailVerified: opts?.emailVerified ?? true,
     },
   });
 
@@ -148,7 +151,11 @@ export function extractCookie(
 }
 
 export async function loginUser(
-  app: { inject: (opts: object) => Promise<{ headers: Record<string, unknown>; statusCode: number; json: () => unknown }> },
+  app: {
+    inject: (
+      opts: object,
+    ) => Promise<{ headers: Record<string, unknown>; statusCode: number; json: () => unknown }>;
+  },
   email: string,
   password: string,
   cookieName: string,

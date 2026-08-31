@@ -37,7 +37,10 @@ export interface CompanySignupSuccess {
     status: string;
   };
   activeMembership: PublicMembership;
-  sessionToken: string;
+  /** Ausente quando o e-mail ainda não foi confirmado — ver `signupOrchestrator.ts`. */
+  sessionToken?: string;
+  emailVerificationRequired?: true;
+  verificationTicket?: string;
 }
 
 /** Dois modos, mesma lógica do cadastro PF — ver `individualSignups.service.ts`. */

@@ -2,6 +2,7 @@
 export const AUTH_ERROR_CODES = {
   INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
   USER_DISABLED: 'USER_DISABLED',
+  EMAIL_NOT_VERIFIED: 'EMAIL_NOT_VERIFIED',
   RATE_LIMIT: 'RATE_LIMIT',
   VALIDATION_ERROR: 'VALIDATION_ERROR',
   INVALID_SESSION: 'INVALID_SESSION',
@@ -29,6 +30,8 @@ export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[keyof typeof AUTH_ERROR_CO
 export const AUTH_ERROR_MESSAGES: Record<AuthErrorCode, string> = {
   INVALID_CREDENTIALS: 'E-mail ou senha inválidos.',
   USER_DISABLED: 'Esta conta foi desativada. Entre em contato com o administrador.',
+  EMAIL_NOT_VERIFIED:
+    'Confirme seu e-mail para entrar. Enviamos um código para o endereço do cadastro.',
   RATE_LIMIT: 'Muitas tentativas. Tente novamente mais tarde.',
   VALIDATION_ERROR: 'Revise os campos informados e tente novamente.',
   INVALID_SESSION: 'Sua sessão expirou. Faça login novamente.',

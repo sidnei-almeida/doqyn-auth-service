@@ -72,14 +72,20 @@ export async function buildApp() {
     });
   });
 
+  // Antes dos `register`, e não depois.
+  //
+  // `app.register` abre um escopo encapsulado, e o tratador de erros da raiz só vale para os
+  // escopos criados depois dele. Registrado no fim, ele não pegava nada: um `ZodError` de rota
+  // saía como 500 genérico, e um `AppError` só acertava o status por acidente — o Fastify lê
+  // `error.statusCode` sozinho — chegando ao cliente sem o `code` que o catálogo define.
+  registerErrorHandler(app);
+
   await app.register(authRoutes);
   await app.register(inviteRoutes);
   await app.register(oauthRoutes);
   await app.register(adminRoutes);
   await app.register(accountRoutes);
   await app.register(internalRoutes);
-
-  registerErrorHandler(app);
 
   return app;
 }

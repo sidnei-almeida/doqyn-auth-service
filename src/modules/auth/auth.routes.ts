@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
 import {
   formatTermsValidationResponse,
@@ -46,12 +46,15 @@ import {
 import { assertEmailChangeEnabled } from '../email-change/emailChange.guard.js';
 import {
   confirmEmailVerificationCodeSchema,
+  emailVerificationStatusQuerySchema,
+  emailVerificationTicketSchema,
   emailVerificationTokenParamSchema,
 } from '../email-verification/emailVerification.schemas.js';
 import {
   confirmEmailVerificationCode,
   confirmEmailVerificationToken,
   getEmailVerificationStatus,
+  resolveVerificationTicket,
   sendEmailVerificationCode,
 } from '../email-verification/emailVerification.service.js';
 import { validateSessionByToken } from '../sessions/sessions.service.js';
@@ -252,9 +255,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       attachToUserId ? { attachToUserId } : undefined,
     );
 
-    setSessionCookie(reply, result.sessionToken, {
-      maxAgeSeconds: getSessionTtlSeconds(),
-    });
+    // Sem sessão quando o e-mail ainda não foi provado: a conta existe, mas o acesso só abre
+    // depois do código. O ticket é o que a tela de confirmação usa para pedir e conferir.
+    if (result.sessionToken) {
+      setSessionCookie(reply, result.sessionToken, {
+        maxAgeSeconds: getSessionTtlSeconds(),
+      });
+    }
 
     return reply.send({
       ok: true,
@@ -262,6 +269,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       user: result.user,
       tenant: result.tenant,
       activeMembership: result.activeMembership,
+      ...(result.emailVerificationRequired
+        ? {
+            emailVerificationRequired: true,
+            verificationTicket: result.verificationTicket,
+          }
+        : {}),
     });
   });
 
@@ -320,9 +333,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       attachToUserId ? { attachToUserId } : undefined,
     );
 
-    setSessionCookie(reply, result.sessionToken, {
-      maxAgeSeconds: getSessionTtlSeconds(),
-    });
+    // Sem sessão quando o e-mail ainda não foi provado: a conta existe, mas o acesso só abre
+    // depois do código. O ticket é o que a tela de confirmação usa para pedir e conferir.
+    if (result.sessionToken) {
+      setSessionCookie(reply, result.sessionToken, {
+        maxAgeSeconds: getSessionTtlSeconds(),
+      });
+    }
 
     return reply.send({
       ok: true,
@@ -330,6 +347,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       user: result.user,
       tenant: result.tenant,
       activeMembership: result.activeMembership,
+      ...(result.emailVerificationRequired
+        ? {
+            emailVerificationRequired: true,
+            verificationTicket: result.verificationTicket,
+          }
+        : {}),
     });
   });
 
@@ -466,65 +489,62 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return reply.send(result);
   });
 
-  app.get('/auth/account/email-verification', async (request, reply) => {
-    const session = await requireSessionUser(request, reply);
-    if (!session) return reply;
-    const status = await getEmailVerificationStatus(session.user.id);
+  // As rotas de verificação são públicas de propósito, e é o ticket que as fecha.
+  //
+  // Quem precisa confirmar o e-mail é justamente quem o login acabou de recusar: não há sessão
+  // para exigir. Aceitar só o endereço deixaria qualquer um despejar e-mail em qualquer cadastro,
+  // então o passe assinado — emitido depois da senha certa, ou do cadastro — é o que autoriza.
+  app.get('/auth/email-verification', async (request, reply) => {
+    const query = emailVerificationStatusQuerySchema.parse(request.query ?? {});
+    const userId = resolveVerificationTicket(query.ticket);
+    const status = await getEmailVerificationStatus(userId);
     return reply.send({ ok: true, ...status });
   });
 
-  app.post('/auth/account/email-verification/send', async (request, reply) => {
-    const session = await requireSessionUser(request, reply);
-    if (!session) return reply;
+  app.post('/auth/email-verification/send', async (request, reply) => {
+    const body = emailVerificationTicketSchema.parse(request.body ?? {});
     const ctx = extractRequestContext(request);
-    const result = await sendEmailVerificationCode(session.user.id, ctx.ipHash);
+    const result = await sendEmailVerificationCode(
+      resolveVerificationTicket(body.ticket),
+      ctx.ipHash,
+    );
     return reply.send(result);
   });
 
   // Reenviar é o mesmo envio de novo — a rota existe separada só porque a tela chama as duas
   // coisas por nomes diferentes, e um "resend" que bate em "/send" confunde quem lê o log.
-  app.post('/auth/account/email-verification/resend', async (request, reply) => {
-    const session = await requireSessionUser(request, reply);
-    if (!session) return reply;
+  app.post('/auth/email-verification/resend', async (request, reply) => {
+    const body = emailVerificationTicketSchema.parse(request.body ?? {});
     const ctx = extractRequestContext(request);
-    const result = await sendEmailVerificationCode(session.user.id, ctx.ipHash);
+    const result = await sendEmailVerificationCode(
+      resolveVerificationTicket(body.ticket),
+      ctx.ipHash,
+    );
     return reply.send(result);
   });
 
-  app.post('/auth/account/email-verification/confirm', async (request, reply) => {
-    const session = await requireSessionUser(request, reply);
-    if (!session) return reply;
+  app.post('/auth/email-verification/confirm', async (request, reply) => {
     const body = confirmEmailVerificationCodeSchema.parse(request.body ?? {});
     const ctx = extractRequestContext(request);
-    const result = await confirmEmailVerificationCode(session.user.id, body.code, ctx.ipHash);
+    const result = await confirmEmailVerificationCode(
+      resolveVerificationTicket(body.ticket),
+      body.code,
+      ctx.ipHash,
+    );
     return reply.send(result);
   });
 
-  // Sem sessão de propósito: quem clica no link está no aparelho onde leu o e-mail, que raramente
-  // é o mesmo onde a conta foi aberta. O token de 32 bytes é o que autentica a ação.
+  // O caminho do link, e ele não pede nem ticket: quem clica está no aparelho onde leu o e-mail,
+  // que raramente é o mesmo onde a conta foi aberta. O token de 32 bytes é o que autentica.
+  //
+  // Confirmar não devolve sessão em nenhum dos dois caminhos. A pessoa faz login depois, e é aí
+  // que as checagens de vínculo com a empresa rodam — dar sessão aqui as contornaria.
   app.post('/auth/email-verification/:token/confirm', async (request, reply) => {
     const params = emailVerificationTokenParamSchema.parse(request.params);
     const ctx = extractRequestContext(request);
     const result = await confirmEmailVerificationToken(params.token, ctx.ipHash);
     return reply.send(result);
   });
-}
-
-/** Resolve a sessão do cookie ou responde 401 — o mesmo par de checagens que as rotas de conta repetem. */
-async function requireSessionUser(request: FastifyRequest, reply: FastifyReply) {
-  const token = getSessionTokenFromRequest(request);
-  if (!token) {
-    await reply.status(401).send({ ok: false, message: 'Não autenticado.', code: 'UNAUTHORIZED' });
-    return null;
-  }
-  const sessionResult = await validateSessionByToken(token);
-  if (!sessionResult.valid) {
-    await reply
-      .status(401)
-      .send({ ok: false, message: 'Sessão inválida.', code: 'INVALID_SESSION' });
-    return null;
-  }
-  return { user: sessionResult.user, token };
 }
 
 export function registerErrorHandler(app: FastifyInstance): void {

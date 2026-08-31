@@ -15,7 +15,13 @@ import {
   checkEmailVerificationConfirmRateLimit,
   checkEmailVerificationSendRateLimit,
 } from '../../security/rateLimit.js';
-import { GoneError, NotFoundError, ValidationError } from '../../utils/errors.js';
+import { readEmailVerificationTicket } from '../../security/verificationTicket.js';
+import {
+  GoneError,
+  NotFoundError,
+  UnauthorizedError,
+  ValidationError,
+} from '../../utils/errors.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
 import { getPlatformSender, isPlatformEmailConfigured, sendEmail } from '../email/email.service.js';
 import { renderEmailVerificationEmail } from '../email/renderEmailVerificationEmail.js';
@@ -37,6 +43,23 @@ function findPendingVerification(userId: string) {
     where: { userId, usedAt: null, expiresAt: { gt: new Date() } },
     orderBy: { createdAt: 'desc' },
   });
+}
+
+/**
+ * Traduz o ticket em `userId`, ou recusa.
+ *
+ * Todas as rotas públicas de verificação passam por aqui: sem sessão, o ticket é a única coisa
+ * que liga a chamada a uma conta, e ele só é emitido depois da senha certa ou do cadastro.
+ */
+export function resolveVerificationTicket(ticket: string): string {
+  const userId = readEmailVerificationTicket(ticket);
+  if (!userId) {
+    throw new UnauthorizedError(
+      'Sessão de confirmação expirada. Faça login novamente para receber um novo código.',
+      'EMAIL_VERIFICATION_TICKET_INVALID',
+    );
+  }
+  return userId;
 }
 
 export async function getEmailVerificationStatus(userId: string) {

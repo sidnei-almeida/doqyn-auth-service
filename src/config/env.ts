@@ -70,6 +70,9 @@ const envSchema = z
     EMAIL_VERIFICATION_MAX_ATTEMPTS: z.coerce.number().default(5),
     // Intervalo mínimo entre dois envios ao mesmo endereço.
     EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS: z.coerce.number().default(60),
+    // Validade do passe que autoriza confirmar sem sessão. Precisa cobrir o tempo de ir ao
+    // e-mail e voltar, e nada além disso.
+    EMAIL_VERIFICATION_TICKET_TTL_MINUTES: z.coerce.number().default(30),
     OAUTH_GOOGLE_ENABLED: z
       .string()
       .optional()

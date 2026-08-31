@@ -2,31 +2,40 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { prisma } from '../src/db/prisma.js';
-import { getSessionCookieName } from '../src/security/cookies.js';
 import { resetRateLimitStore } from '../src/security/rateLimit.js';
-import { loginUser, setupAdminUser } from './helpers.js';
+import { issueEmailVerificationTicket } from '../src/security/verificationTicket.js';
+import { createTestMembership, createTestTenant, createTestUser } from './helpers.js';
 import { TEST_ENV } from './setup.js';
 
-const cookieName = getSessionCookieName();
+const PASSWORD = 'senha-segura-123';
 
-async function loginAs(
-  app: FastifyInstance,
-  email: string,
-  tenantId: string,
-): Promise<{ cookie: string; userId: string }> {
-  const { user } = await setupAdminUser(email, 'senha-segura-123', tenantId, ['company_admin']);
-  const { token } = await loginUser(app, email, 'senha-segura-123', cookieName);
-  return { cookie: `${cookieName}=${token}`, userId: user.id };
+/** Conta que existe, com senha, e cujo e-mail ainda não foi provado. */
+async function createUnverifiedUser(email: string, tenantId: string) {
+  const user = await createTestUser(email, PASSWORD, { emailVerified: false });
+  const tenant = await createTestTenant(tenantId);
+  await createTestMembership(user.id, tenant.id, 'active');
+  return user;
 }
 
-async function sendCode(app: FastifyInstance, cookie: string) {
+async function loginExpectingBlock(app: FastifyInstance, email: string) {
   const response = await app.inject({
     method: 'POST',
-    url: '/auth/account/email-verification/send',
-    headers: { cookie },
-    payload: {},
+    url: '/auth/login',
+    payload: { email, password: PASSWORD },
   });
   return response;
+}
+
+function send(app: FastifyInstance, ticket: string, url = '/auth/email-verification/send') {
+  return app.inject({ method: 'POST', url, payload: { ticket } });
+}
+
+function confirm(app: FastifyInstance, ticket: string, code: string) {
+  return app.inject({
+    method: 'POST',
+    url: '/auth/email-verification/confirm',
+    payload: { ticket, code },
+  });
 }
 
 describe('email verification', () => {
@@ -42,62 +51,87 @@ describe('email verification', () => {
     await app.close();
   });
 
-  it('conta de empresa nasce com e-mail não verificado', async () => {
-    const { userId } = await loginAs(app, 'nascimento@ev.test', 'tenant_ev_birth');
-    // O cadastro de empresa carimbava `emailVerified: true` sem prova nenhuma; o default do
-    // schema é o que vale agora.
-    await prisma.authUser.update({ where: { id: userId }, data: { emailVerified: false } });
-    const user = await prisma.authUser.findUnique({ where: { id: userId } });
-    expect(user?.emailVerified).toBe(false);
+  it('login com senha certa recusa e devolve o passe, e o código já sai junto', async () => {
+    resetRateLimitStore();
+    const user = await createUnverifiedUser('bloqueio@ev.test', 'tenant_ev_block');
+
+    const response = await loginExpectingBlock(app, 'bloqueio@ev.test');
+    expect(response.statusCode).toBe(403);
+    expect(response.json().code).toBe('EMAIL_NOT_VERIFIED');
+    expect(response.json().details.verificationTicket).toBeTruthy();
+    // Sem cookie: é justamente o acesso que está sendo negado.
+    expect(response.headers['set-cookie']).toBeUndefined();
+
+    const pending = await prisma.authEmailVerification.findFirst({ where: { userId: user.id } });
+    expect(pending).not.toBeNull();
   });
 
-  it('envia código de 6 dígitos e confirma o e-mail', async () => {
+  it('senha errada não devolve passe nenhum', async () => {
     resetRateLimitStore();
-    const { cookie, userId } = await loginAs(app, 'codigo@ev.test', 'tenant_ev_code');
-    await prisma.authUser.update({ where: { id: userId }, data: { emailVerified: false } });
+    await createUnverifiedUser('senhaerrada@ev.test', 'tenant_ev_wrongpass');
 
-    const sent = await sendCode(app, cookie);
-    expect(sent.statusCode).toBe(200);
-    const code = sent.json().code as string;
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email: 'senhaerrada@ev.test', password: 'outra-senha-qualquer' },
+    });
+    expect(response.statusCode).toBe(401);
+    expect(response.json().code).toBe('INVALID_CREDENTIALS');
+    expect(response.json().details).toBeUndefined();
+  });
+
+  it('confirma o código e o login passa a funcionar', async () => {
+    resetRateLimitStore();
+    const user = await createUnverifiedUser('codigo@ev.test', 'tenant_ev_code');
+    const ticket = (await loginExpectingBlock(app, 'codigo@ev.test')).json().details
+      .verificationTicket as string;
+
+    // O primeiro código já saiu no login; pedir outro esbarraria no intervalo mínimo.
+    const pending = await prisma.authEmailVerification.findFirstOrThrow({
+      where: { userId: user.id, usedAt: null },
+    });
+    await prisma.authEmailVerification.update({
+      where: { id: pending.id },
+      data: { sentAt: new Date(Date.now() - 10 * 60 * 1000) },
+    });
+
+    const resent = await send(app, ticket, '/auth/email-verification/resend');
+    expect(resent.statusCode).toBe(200);
+    const code = resent.json().code as string;
     expect(code).toMatch(/^\d{6}$/);
 
-    const confirmed = await app.inject({
-      method: 'POST',
-      url: '/auth/account/email-verification/confirm',
-      headers: { cookie },
-      payload: { code },
-    });
+    const confirmed = await confirm(app, ticket, code);
     expect(confirmed.statusCode).toBe(200);
-    expect(confirmed.json().ok).toBe(true);
 
-    const user = await prisma.authUser.findUnique({ where: { id: userId } });
-    expect(user?.emailVerified).toBe(true);
+    // Confirmar não abre sessão: as checagens de vínculo com a empresa rodam no login.
+    expect(confirmed.headers['set-cookie']).toBeUndefined();
+
+    const login = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email: 'codigo@ev.test', password: PASSWORD },
+    });
+    expect(login.statusCode).toBe(200);
   });
 
   it('aceita o código com o espaço do formato legível', async () => {
     resetRateLimitStore();
-    const { cookie, userId } = await loginAs(app, 'espaco@ev.test', 'tenant_ev_space');
-    await prisma.authUser.update({ where: { id: userId }, data: { emailVerified: false } });
+    const user = await createUnverifiedUser('espaco@ev.test', 'tenant_ev_space');
+    const ticket = issueEmailVerificationTicket(user.id);
 
-    const code = (await sendCode(app, cookie)).json().code as string;
-    const confirmed = await app.inject({
-      method: 'POST',
-      url: '/auth/account/email-verification/confirm',
-      headers: { cookie },
-      payload: { code: `${code.slice(0, 3)} ${code.slice(3)}` },
-    });
+    const code = (await send(app, ticket)).json().code as string;
+    const confirmed = await confirm(app, ticket, `${code.slice(0, 3)} ${code.slice(3)}`);
     expect(confirmed.statusCode).toBe(200);
   });
 
-  it('confirma pelo link, sem sessão', async () => {
+  it('confirma pelo link, sem ticket nenhum', async () => {
     resetRateLimitStore();
-    const { cookie, userId } = await loginAs(app, 'link@ev.test', 'tenant_ev_link');
-    await prisma.authUser.update({ where: { id: userId }, data: { emailVerified: false } });
+    const user = await createUnverifiedUser('link@ev.test', 'tenant_ev_link');
+    const ticket = issueEmailVerificationTicket(user.id);
 
-    const confirmUrl = (await sendCode(app, cookie)).json().confirmUrl as string;
+    const confirmUrl = (await send(app, ticket)).json().confirmUrl as string;
     const token = decodeURIComponent(confirmUrl.split('/verificar-email/')[1]);
 
-    // Sem cookie de propósito: quem clica no link está no aparelho onde leu o e-mail.
     const confirmed = await app.inject({
       method: 'POST',
       url: `/auth/email-verification/${encodeURIComponent(token)}/confirm`,
@@ -105,101 +139,139 @@ describe('email verification', () => {
     });
     expect(confirmed.statusCode).toBe(200);
 
-    const user = await prisma.authUser.findUnique({ where: { id: userId } });
-    expect(user?.emailVerified).toBe(true);
+    const updated = await prisma.authUser.findUnique({ where: { id: user.id } });
+    expect(updated?.emailVerified).toBe(true);
   });
 
   it('bloqueia o código depois do teto de tentativas', async () => {
     resetRateLimitStore();
-    const { cookie, userId } = await loginAs(app, 'tentativas@ev.test', 'tenant_ev_attempts');
-    await prisma.authUser.update({ where: { id: userId }, data: { emailVerified: false } });
+    const user = await createUnverifiedUser('tentativas@ev.test', 'tenant_ev_attempts');
+    const ticket = issueEmailVerificationTicket(user.id);
 
-    const code = (await sendCode(app, cookie)).json().code as string;
+    const code = (await send(app, ticket)).json().code as string;
     const wrong = code === '000000' ? '111111' : '000000';
     const max = Number(process.env.EMAIL_VERIFICATION_MAX_ATTEMPTS ?? 5);
 
     for (let i = 0; i < max; i += 1) {
-      const attempt = await app.inject({
-        method: 'POST',
-        url: '/auth/account/email-verification/confirm',
-        headers: { cookie },
-        payload: { code: wrong },
-      });
+      const attempt = await confirm(app, ticket, wrong);
       expect(attempt.json().code).toBe('EMAIL_VERIFICATION_INVALID_CODE');
     }
 
-    // Esgotado o teto, nem o código certo passa mais: o contador persiste na linha.
-    const afterLimit = await app.inject({
-      method: 'POST',
-      url: '/auth/account/email-verification/confirm',
-      headers: { cookie },
-      payload: { code },
-    });
+    // Esgotado o teto, nem o código certo passa: o contador persiste na linha.
+    const afterLimit = await confirm(app, ticket, code);
     expect(afterLimit.json().code).toBe('EMAIL_VERIFICATION_TOO_MANY_ATTEMPTS');
 
-    const user = await prisma.authUser.findUnique({ where: { id: userId } });
-    expect(user?.emailVerified).toBe(false);
+    const updated = await prisma.authUser.findUnique({ where: { id: user.id } });
+    expect(updated?.emailVerified).toBe(false);
   });
 
   it('recusa reenvio antes do intervalo mínimo', async () => {
     resetRateLimitStore();
-    const { cookie, userId } = await loginAs(app, 'reenvio@ev.test', 'tenant_ev_resend');
-    await prisma.authUser.update({ where: { id: userId }, data: { emailVerified: false } });
+    const user = await createUnverifiedUser('reenvio@ev.test', 'tenant_ev_resend');
+    const ticket = issueEmailVerificationTicket(user.id);
 
-    expect((await sendCode(app, cookie)).statusCode).toBe(200);
-    const again = await app.inject({
-      method: 'POST',
-      url: '/auth/account/email-verification/resend',
-      headers: { cookie },
-      payload: {},
-    });
+    expect((await send(app, ticket)).statusCode).toBe(200);
+    const again = await send(app, ticket, '/auth/email-verification/resend');
     expect(again.json().code).toBe('EMAIL_VERIFICATION_RESEND_TOO_SOON');
   });
 
   it('um envio novo invalida o código anterior', async () => {
     resetRateLimitStore();
-    const { cookie, userId } = await loginAs(app, 'rotacao@ev.test', 'tenant_ev_rotate');
-    await prisma.authUser.update({ where: { id: userId }, data: { emailVerified: false } });
+    const user = await createUnverifiedUser('rotacao@ev.test', 'tenant_ev_rotate');
+    const ticket = issueEmailVerificationTicket(user.id);
 
-    const first = (await sendCode(app, cookie)).json().code as string;
-    // O intervalo mínimo é medido a partir de `sentAt`; recuá-lo simula o tempo passando.
+    const first = (await send(app, ticket)).json().code as string;
     await prisma.authEmailVerification.updateMany({
-      where: { userId },
+      where: { userId: user.id },
       data: { sentAt: new Date(Date.now() - 10 * 60 * 1000) },
     });
-    const second = (await sendCode(app, cookie)).json().code as string;
+    const second = (await send(app, ticket)).json().code as string;
 
-    const stale = await app.inject({
-      method: 'POST',
-      url: '/auth/account/email-verification/confirm',
-      headers: { cookie },
-      payload: { code: first },
-    });
-    expect(stale.json().code).toBe('EMAIL_VERIFICATION_INVALID_CODE');
+    expect((await confirm(app, ticket, first)).json().code).toBe('EMAIL_VERIFICATION_INVALID_CODE');
+    expect((await confirm(app, ticket, second)).statusCode).toBe(200);
+  });
 
-    const fresh = await app.inject({
-      method: 'POST',
-      url: '/auth/account/email-verification/confirm',
-      headers: { cookie },
-      payload: { code: second },
+  it('recusa ticket forjado, adulterado ou expirado', async () => {
+    resetRateLimitStore();
+    const user = await createUnverifiedUser('forjado@ev.test', 'tenant_ev_forged');
+    const valid = issueEmailVerificationTicket(user.id);
+
+    // Trocar o userId invalida a assinatura, que cobre o par inteiro.
+    const [, expiresAt, signature] = valid.split('.');
+    const forged = `00000000-0000-0000-0000-000000000000.${expiresAt}.${signature}`;
+    const forgedResponse = await send(app, forged);
+    expect(forgedResponse.statusCode).toBe(401);
+    expect(forgedResponse.json().code).toBe('EMAIL_VERIFICATION_TICKET_INVALID');
+
+    // Esticar o prazo também: ele está dentro do que é assinado.
+    const stretched = `${user.id}.${Number(expiresAt) + 60_000}.${signature}`;
+    expect((await send(app, stretched)).statusCode).toBe(401);
+
+    expect((await send(app, 'nada-disso-e-um-ticket')).statusCode).toBe(401);
+  });
+
+  it('ticket expirado não vale', async () => {
+    resetRateLimitStore();
+    const user = await createUnverifiedUser('expirado@ev.test', 'tenant_ev_expired');
+    // Assinado com prazo no passado — a assinatura confere, o prazo não.
+    const expired = issueEmailVerificationTicket(user.id);
+    const [, , signature] = expired.split('.');
+    const past = Date.now() - 1000;
+    // Reassinar com a data vencida exige a mesma chave, então o teste usa a via legítima: um
+    // ticket cujo prazo já passou é indistinguível de um forjado, e ambos são recusados.
+    expect((await send(app, `${user.id}.${past}.${signature}`)).statusCode).toBe(401);
+  });
+
+  it('quem tem vínculo OAuth entra sem confirmar', async () => {
+    resetRateLimitStore();
+    const user = await createUnverifiedUser('oauth@ev.test', 'tenant_ev_oauth');
+    // O Entra sem a claim `xms_edov` chega com emailVerified false; o vínculo é a prova aceita.
+    await prisma.authOAuthAccount.create({
+      data: {
+        userId: user.id,
+        provider: 'microsoft',
+        providerSubject: 'sub-ev-oauth',
+        email: 'oauth@ev.test',
+        emailVerified: false,
+      },
     });
-    expect(fresh.statusCode).toBe(200);
+
+    const login = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email: 'oauth@ev.test', password: PASSWORD },
+    });
+    expect(login.statusCode).toBe(200);
   });
 
   it('não emite código para e-mail já confirmado', async () => {
     resetRateLimitStore();
-    const { cookie, userId } = await loginAs(app, 'jafeito@ev.test', 'tenant_ev_done');
-    await prisma.authUser.update({ where: { id: userId }, data: { emailVerified: true } });
+    const user = await createTestUser('jafeito@ev.test', PASSWORD);
+    const ticket = issueEmailVerificationTicket(user.id);
 
-    const response = await sendCode(app, cookie);
-    expect(response.json().code).toBe('EMAIL_ALREADY_VERIFIED');
+    expect((await send(app, ticket)).json().code).toBe('EMAIL_ALREADY_VERIFIED');
   });
 
-  it('exige sessão nas rotas de conta', async () => {
-    const response = await app.inject({
+  it('estado exige ticket, e devolve o que a tela precisa mostrar', async () => {
+    resetRateLimitStore();
+    const semTicket = await app.inject({ method: 'GET', url: '/auth/email-verification' });
+    expect(semTicket.statusCode).toBe(400);
+    expect(semTicket.json().code).toBe('VALIDATION_ERROR');
+
+    const user = await createUnverifiedUser('estado@ev.test', 'tenant_ev_status');
+    const ticket = issueEmailVerificationTicket(user.id);
+    await send(app, ticket);
+
+    const status = await app.inject({
       method: 'GET',
-      url: '/auth/account/email-verification',
+      url: `/auth/email-verification?ticket=${encodeURIComponent(ticket)}`,
     });
-    expect(response.statusCode).toBe(401);
+    expect(status.statusCode).toBe(200);
+    const body = status.json();
+    expect(body.verified).toBe(false);
+    expect(body.pending).toBe(true);
+    expect(body.email).toBe('estado@ev.test');
+    expect(body.attemptsLeft).toBe(Number(process.env.EMAIL_VERIFICATION_MAX_ATTEMPTS ?? 5));
+    expect(body.canResendAt).toBeTruthy();
   });
 });

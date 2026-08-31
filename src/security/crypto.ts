@@ -136,6 +136,16 @@ export function hashEmailVerificationToken(token: string): string {
 }
 
 /**
+ * Assinatura do ticket de verificação — ver `verificationTicket.ts`.
+ *
+ * Separada do hash de código porque o ticket não é um segredo guardado: ele carrega o próprio
+ * conteúdo e a assinatura é tudo que impede alguém de escrever um com o `userId` alheio.
+ */
+export function signVerificationTicket(payload: string): string {
+  return hmacSha256(payload, getPasswordResetTokenSecret());
+}
+
+/**
  * O código de 6 dígitos entra amarrado ao usuário.
  *
  * Só 10^6 valores existem: com o segredo em mãos, hash do código puro seria uma tabela pronta que

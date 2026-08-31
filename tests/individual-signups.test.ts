@@ -5,7 +5,6 @@ import { prisma } from '../src/db/prisma.js';
 import { TEST_ENV } from './setup.js';
 import { hashLookup } from '../src/security/crypto.js';
 import { normalizeTaxId } from '../src/utils/normalize.js';
-import { extractCookie } from './helpers.js';
 import { DOQYN_TERMS_VERSION } from '../src/modules/terms/terms.constants.js';
 
 const mockFetch = vi.fn();
@@ -68,7 +67,11 @@ describe('individual signups', () => {
     expect(body.tenant.tenantType).toBe('individual');
     expect(body.activeMembership.roles).toContain('individual_admin');
     expect(body.activeMembership.roles).toContain('user');
-    expect(extractCookie(response.headers['set-cookie'] as string, 'doqyn_session')).toBeTruthy();
+    // Cadastro por formulário não abre sessão: o e-mail ainda é uma afirmação. O que volta é o
+    // passe para confirmar o código.
+    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(body.emailVerificationRequired).toBe(true);
+    expect(body.verificationTicket).toBeTruthy();
 
     const taxIdHash = hashLookup(normalizeTaxId(payload.taxId));
     const tenant = await prisma.authTenant.findFirst({ where: { taxIdHash } });

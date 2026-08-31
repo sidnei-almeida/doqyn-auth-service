@@ -180,16 +180,27 @@ model AuthPasswordReset {
   @@map("auth_password_resets")
 }
 
+/// Confirmação do e-mail com que a conta nasceu.
+///
+/// Guarda os dois formatos do mesmo segredo: `codeHash` para os 6 dígitos que a pessoa digita, e
+/// `tokenHash` para o link do mesmo e-mail. Um código curto só é seguro com teto de tentativas, e
+/// é por isso que `attempts` mora na linha e não num contador em memória: reiniciar o processo não
+/// pode devolver tentativas a quem está adivinhando.
 model AuthEmailVerification {
   id        String    @id @default(uuid()) @db.Uuid
   userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @map("code_hash")
   tokenHash String    @unique @map("token_hash")
+  attempts  Int       @default(0)
   expiresAt DateTime  @map("expires_at")
   usedAt    DateTime? @map("used_at")
+  /// Quando o e-mail saiu — é daqui que o teto de reenvio se mede.
+  sentAt    DateTime? @map("sent_at")
   createdAt DateTime  @default(now()) @map("created_at")
 
   user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId, usedAt])
   @@map("auth_email_verifications")
 }
 

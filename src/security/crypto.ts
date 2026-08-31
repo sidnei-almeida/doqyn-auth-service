@@ -131,6 +131,21 @@ export function hashEmailChangeToken(token: string): string {
   return hmacSha256(token, getPasswordResetTokenSecret());
 }
 
+export function hashEmailVerificationToken(token: string): string {
+  return hmacSha256(token, getPasswordResetTokenSecret());
+}
+
+/**
+ * O código de 6 dígitos entra amarrado ao usuário.
+ *
+ * Só 10^6 valores existem: com o segredo em mãos, hash do código puro seria uma tabela pronta que
+ * casa contra a base inteira de uma vez. Misturar o `userId` faz cada linha exigir seu próprio
+ * ataque, e impede que o código de uma conta case com a pendência de outra.
+ */
+export function hashEmailVerificationCode(userId: string, code: string): string {
+  return hmacSha256(`${userId}:${code}`, getPasswordResetTokenSecret());
+}
+
 export function hashIp(ip: string): string {
   return hmacSha256(ip, getLookupSecret());
 }

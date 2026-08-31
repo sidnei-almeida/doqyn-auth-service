@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
 import {
   formatTermsValidationResponse,
@@ -44,6 +44,16 @@ import {
   requestEmailChange,
 } from '../email-change/emailChange.service.js';
 import { assertEmailChangeEnabled } from '../email-change/emailChange.guard.js';
+import {
+  confirmEmailVerificationCodeSchema,
+  emailVerificationTokenParamSchema,
+} from '../email-verification/emailVerification.schemas.js';
+import {
+  confirmEmailVerificationCode,
+  confirmEmailVerificationToken,
+  getEmailVerificationStatus,
+  sendEmailVerificationCode,
+} from '../email-verification/emailVerification.service.js';
 import { validateSessionByToken } from '../sessions/sessions.service.js';
 import { selectTenantSchema } from '../admin/admin.schemas.js';
 import { accessRequestSchema } from '../access-requests/accessRequests.schemas.js';
@@ -455,6 +465,66 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const result = await confirmEmailChange(params.token, ctx.ipHash);
     return reply.send(result);
   });
+
+  app.get('/auth/account/email-verification', async (request, reply) => {
+    const session = await requireSessionUser(request, reply);
+    if (!session) return reply;
+    const status = await getEmailVerificationStatus(session.user.id);
+    return reply.send({ ok: true, ...status });
+  });
+
+  app.post('/auth/account/email-verification/send', async (request, reply) => {
+    const session = await requireSessionUser(request, reply);
+    if (!session) return reply;
+    const ctx = extractRequestContext(request);
+    const result = await sendEmailVerificationCode(session.user.id, ctx.ipHash);
+    return reply.send(result);
+  });
+
+  // Reenviar é o mesmo envio de novo — a rota existe separada só porque a tela chama as duas
+  // coisas por nomes diferentes, e um "resend" que bate em "/send" confunde quem lê o log.
+  app.post('/auth/account/email-verification/resend', async (request, reply) => {
+    const session = await requireSessionUser(request, reply);
+    if (!session) return reply;
+    const ctx = extractRequestContext(request);
+    const result = await sendEmailVerificationCode(session.user.id, ctx.ipHash);
+    return reply.send(result);
+  });
+
+  app.post('/auth/account/email-verification/confirm', async (request, reply) => {
+    const session = await requireSessionUser(request, reply);
+    if (!session) return reply;
+    const body = confirmEmailVerificationCodeSchema.parse(request.body ?? {});
+    const ctx = extractRequestContext(request);
+    const result = await confirmEmailVerificationCode(session.user.id, body.code, ctx.ipHash);
+    return reply.send(result);
+  });
+
+  // Sem sessão de propósito: quem clica no link está no aparelho onde leu o e-mail, que raramente
+  // é o mesmo onde a conta foi aberta. O token de 32 bytes é o que autentica a ação.
+  app.post('/auth/email-verification/:token/confirm', async (request, reply) => {
+    const params = emailVerificationTokenParamSchema.parse(request.params);
+    const ctx = extractRequestContext(request);
+    const result = await confirmEmailVerificationToken(params.token, ctx.ipHash);
+    return reply.send(result);
+  });
+}
+
+/** Resolve a sessão do cookie ou responde 401 — o mesmo par de checagens que as rotas de conta repetem. */
+async function requireSessionUser(request: FastifyRequest, reply: FastifyReply) {
+  const token = getSessionTokenFromRequest(request);
+  if (!token) {
+    await reply.status(401).send({ ok: false, message: 'Não autenticado.', code: 'UNAUTHORIZED' });
+    return null;
+  }
+  const sessionResult = await validateSessionByToken(token);
+  if (!sessionResult.valid) {
+    await reply
+      .status(401)
+      .send({ ok: false, message: 'Sessão inválida.', code: 'INVALID_SESSION' });
+    return null;
+  }
+  return { user: sessionResult.user, token };
 }
 
 export function registerErrorHandler(app: FastifyInstance): void {

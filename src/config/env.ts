@@ -60,7 +60,16 @@ const envSchema = z
     PASSWORD_RESET_TOKEN_HASH_SECRET: hmacSecret('PASSWORD_RESET_TOKEN_HASH_SECRET'),
     PASSWORD_PEPPER: z.string().optional().default(''),
     PASSWORD_RESET_TTL_MINUTES: z.coerce.number().default(30),
+    // Prazo do link de confirmação, que a pessoa pode abrir do celular horas depois.
     EMAIL_VERIFICATION_TTL_HOURS: z.coerce.number().default(24),
+    // Prazo do código de 6 dígitos, bem mais curto que o do link: seis dígitos são um segredo
+    // pequeno, e a janela é a segunda linha de defesa depois do teto de tentativas.
+    EMAIL_VERIFICATION_CODE_TTL_MINUTES: z.coerce.number().default(15),
+    // Palpites por código antes de queimá-lo. Cinco contra 10^6 valores deixa a chance de acerto
+    // em 1 em 200 mil por código emitido.
+    EMAIL_VERIFICATION_MAX_ATTEMPTS: z.coerce.number().default(5),
+    // Intervalo mínimo entre dois envios ao mesmo endereço.
+    EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS: z.coerce.number().default(60),
     OAUTH_GOOGLE_ENABLED: z
       .string()
       .optional()

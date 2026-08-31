@@ -111,12 +111,15 @@ export async function submitCompanySignup(
       status: 'active' as const,
     };
 
-    // `emailVerified` só é afirmado ao criar a conta neste fluxo. No modo de anexar, quem
-    // responde pela verificação é o provedor que autenticou a sessão, e nem todo provedor
-    // garante isso — o Microsoft Entra só emite a claim equivalente (`xms_edov`) quando ela
-    // é habilitada no app registration. Sobrescrever aqui carimbaria verificado sem prova.
-    const createOnlyFields = { emailVerified: true };
-
+    // `emailVerified` fica no default `false` do schema. Este fluxo é o do formulário, onde
+    // ninguém provou nada: quem digita um endereço não demonstra ter acesso a ele, e carimbar
+    // verificado aqui deixava qualquer pessoa abrir conta com o e-mail de outra. A prova vem
+    // depois, pelo código de `email-verification`.
+    //
+    // No modo de anexar, quem responde pela verificação é o provedor que autenticou a sessão —
+    // e nem todo provedor garante isso: o Microsoft Entra só emite a claim equivalente
+    // (`xms_edov`) quando ela é habilitada no app registration. Por isso o campo também não é
+    // tocado ali.
     const user =
       attachToUserId && !email
         ? await tx.authUser.update({ where: { id: attachToUserId }, data: profile })
@@ -128,7 +131,6 @@ export async function submitCompanySignup(
               emailEncrypted: encryptField(email!),
               emailLookupHash: emailLookupHash!,
               ...profile,
-              ...createOnlyFields,
             },
           });
 

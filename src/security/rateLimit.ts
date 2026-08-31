@@ -114,6 +114,31 @@ export async function checkEmailChangeConfirmRateLimit(ipHash: string): Promise<
   await checkLimit(`email-change-confirm:ip:${ipHash}`, 15);
 }
 
+/**
+ * Teto de envio, e ele protege terceiros antes de proteger a plataforma.
+ *
+ * O endereço que recebe o código não é de quem aperta o botão — é de quem foi digitado no
+ * cadastro. Sem teto, "reenviar" vira ferramenta de flood contra uma caixa de entrada alheia, e o
+ * domínio remetente paga a conta em reputação.
+ */
+export async function checkEmailVerificationSendRateLimit(
+  ipHash: string,
+  userId: string,
+): Promise<void> {
+  await checkLimit(`email-verification-send:ip:${ipHash}`, 10);
+  await checkLimit(`email-verification-send:user:${userId}`, 5);
+}
+
+/**
+ * Teto de conferência, somado ao contador por código.
+ *
+ * `attempts` na linha limita quem ataca um código; este limita quem pede código novo a cada
+ * punhado de palpites e assim nunca esgota o contador de nenhum deles.
+ */
+export async function checkEmailVerificationConfirmRateLimit(ipHash: string): Promise<void> {
+  await checkLimit(`email-verification-confirm:ip:${ipHash}`, 20);
+}
+
 export function resetRateLimitStore(): void {
   store.clear();
 }

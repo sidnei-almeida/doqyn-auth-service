@@ -67,6 +67,9 @@ export type AuditAction =
   | 'auth.oauth_onboarding_required'
   | 'email_change.requested'
   | 'email_change.confirmed'
+  | 'email_verification.sent'
+  | 'email_verification.failed'
+  | 'email_verification.confirmed'
   | 'invite.created'
   | 'invite.accepted'
   | 'invite.revoked';

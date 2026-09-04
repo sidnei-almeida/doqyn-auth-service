@@ -366,6 +366,7 @@ model AuthAccessGroup {
 
   tenant      AuthTenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   memberLinks AuthMembershipAccessGroup[]
+  inviteLinks AuthInviteAccessGroup[]
 
   @@unique([tenantId, groupId])
   @@unique([tenantId, slug])
@@ -522,6 +523,7 @@ model AuthInvite {
   invitedByUser    AuthUser         @relation("InviteInvitedByUser", fields: [invitedByUserId], references: [id], onDelete: Cascade)
   acceptedByUser   AuthUser?        @relation("InviteAcceptedByUser", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
   roles            AuthInviteRole[]
+  accessGroups     AuthInviteAccessGroup[]
 
   @@index([tenantId, emailLookupHash, status])
   @@index([tenantId, status])
@@ -539,6 +541,27 @@ model AuthInviteRole {
 
   @@unique([inviteId, role])
   @@map("auth_invite_roles")
+}
+
+/// Os grupos que o convidado recebe ao aceitar.
+///
+/// Espelha `AuthInviteRole` porque o problema é o mesmo: o convite precisa carregar a decisão
+/// tomada na hora de convidar. Antes, quem atribuía grupo era o administrador ao aprovar o
+/// pedido de acesso; sem essa etapa, o convidado entraria sem grupo e não enxergaria documento
+/// nenhum. O vínculo aponta para `AuthAccessGroup` com `Cascade`: grupo apagado não deixa
+/// convite prometendo acesso a algo que não existe mais.
+model AuthInviteAccessGroup {
+  id            String   @id @default(uuid()) @db.Uuid
+  inviteId      String   @map("invite_id") @db.Uuid
+  accessGroupId String   @map("access_group_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  invite      AuthInvite      @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  accessGroup AuthAccessGroup @relation(fields: [accessGroupId], references: [id], onDelete: Cascade)
+
+  @@unique([inviteId, accessGroupId])
+  @@index([accessGroupId])
+  @@map("auth_invite_access_groups")
 }
 
 model AuthTenantOutboundEmail {

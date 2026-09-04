@@ -6,6 +6,14 @@ const tenantRoleSchema = z.enum(['company_admin', 'individual_admin', 'user']);
 export const createInviteSchema = z.object({
   email: z.string().email(),
   roles: z.array(tenantRoleSchema).min(1).default(['user']),
+  /**
+   * Os grupos que o convidado recebe ao aceitar.
+   *
+   * São os `groupId` de texto que a empresa usa, não os UUIDs internos — é o mesmo formato que
+   * `updateMemberAccessGroups` recebe, e o que o front já tem em mãos. Vazio é legítimo: nem
+   * todo convite precisa conceder grupo, e um administrador convidado alcança tudo por papel.
+   */
+  accessGroupIds: z.array(z.string().trim().min(1)).default([]),
   tenantId: z.string().optional(),
   firstName: z.string().trim().optional(),
   lastName: z.string().trim().optional(),

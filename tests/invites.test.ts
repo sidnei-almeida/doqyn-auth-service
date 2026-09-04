@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { prisma } from '../src/db/prisma.js';
-import { hashInviteToken } from '../src/security/crypto.js';
+import { encryptField, hashInviteToken, hashLookup } from '../src/security/crypto.js';
+import { normalizeEmail } from '../src/utils/normalize.js';
 import { getSessionCookieName } from '../src/security/cookies.js';
 import { createTestUser, loginUser, setupAdminUser } from './helpers.js';
 import { TEST_ENV } from './setup.js';
@@ -48,7 +49,7 @@ async function createInvite(
   app: FastifyInstance,
   adminCookie: string,
   email: string,
-  opts?: { firstName?: string; lastName?: string },
+  opts?: { firstName?: string; lastName?: string; accessGroupIds?: string[]; expectStatus?: number },
 ) {
   const response = await app.inject({
     method: 'POST',
@@ -59,9 +60,10 @@ async function createInvite(
       roles: ['user'],
       firstName: opts?.firstName,
       lastName: opts?.lastName,
+      ...(opts?.accessGroupIds ? { accessGroupIds: opts.accessGroupIds } : {}),
     },
   });
-  expect(response.statusCode).toBe(201);
+  expect(response.statusCode).toBe(opts?.expectStatus ?? 201);
   return response.json() as {
     inviteToken: string;
     invite: { id: string };
@@ -258,5 +260,75 @@ describe('member invites', () => {
       where: { status: 'active' },
     });
     expect(memberships).toBeGreaterThanOrEqual(2);
+  });
+  /**
+   * O convite é a aprovação, então ele precisa carregar o que a aprovação carregava.
+   *
+   * Antes, quem atribuía grupo era o administrador ao aprovar o pedido de acesso. Sem essa
+   * etapa, um convite sem grupo entrega uma conta ativa que não enxerga documento nenhum —
+   * a governança concede ao grupo, nunca à pessoa solta.
+   */
+  it('convite carrega grupos de acesso, e o aceite os aplica na membership', async () => {
+    const adminCookie = await loginAsAdmin(app);
+
+    const tenant = await prisma.authTenant.findFirst({ where: { tenantId } });
+    const grupo = await prisma.authAccessGroup.create({
+      data: {
+        tenantId: tenant!.id,
+        groupId: 'grp_financeiro_convite',
+        slug: 'financeiro-convite',
+        nameEncrypted: encryptField('Financeiro'),
+        status: 'active',
+      },
+    });
+
+    const { inviteToken } = await createInvite(app, adminCookie, 'comgrupo@invite.test', {
+      accessGroupIds: ['grp_financeiro_convite'],
+    });
+
+    // O convidado vê a que está sendo dado acesso antes de aceitar.
+    const preview = await app.inject({ method: 'GET', url: `/auth/invites/${inviteToken}` });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json().invite.accessGroups).toEqual([
+      { groupId: 'grp_financeiro_convite', name: 'Financeiro' },
+    ]);
+
+    const accept = await app.inject({
+      method: 'POST',
+      url: `/auth/invites/${inviteToken}/accept`,
+      payload: buildAcceptPayload({ firstName: 'Com', lastName: 'Grupo' }),
+    });
+    expect(accept.statusCode).toBe(200);
+
+    const vinculos = await prisma.authMembershipAccessGroup.findMany({
+      where: { membershipId: accept.json().membershipId },
+    });
+    expect(vinculos.map((v) => v.accessGroupId)).toEqual([grupo.id]);
+  });
+
+  it('recusa convite para grupo que não existe, antes de o link ser gerado', async () => {
+    const adminCookie = await loginAsAdmin(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/invites',
+      headers: { cookie: adminCookie },
+      payload: {
+        email: 'grupoinvalido@invite.test',
+        roles: ['user'],
+        accessGroupIds: ['grp_que_nao_existe'],
+      },
+    });
+
+    // O erro é do convidador, que ainda está com a tela aberta. Deixar passar transferiria a
+    // falha para o convidado, que descobriria no aceite por uma escolha que não foi dele.
+    expect(response.statusCode).toBe(400);
+    expect(response.json().code).toBe('INVITE_ACCESS_GROUP_INVALID');
+
+    // A recusa acontece antes de gravar: não sobra convite órfão para este e-mail.
+    const criado = await prisma.authInvite.findFirst({
+      where: { emailLookupHash: hashLookup(normalizeEmail('grupoinvalido@invite.test')) },
+    });
+    expect(criado).toBeNull();
   });
 });

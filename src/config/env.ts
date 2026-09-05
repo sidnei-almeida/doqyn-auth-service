@@ -121,6 +121,14 @@ const envSchema = z
       .optional()
       .default('false')
       .transform((v) => v === 'true'),
+    /**
+     * Quem entrega o e-mail da plataforma: `resend` ou `smtp`.
+     *
+     * Não decide *se* envia — isso é `EMAIL_ENABLED`. E não afeta o SMTP próprio de um tenant,
+     * que continua vencendo sobre o provedor da plataforma quando existe.
+     */
+    EMAIL_PROVIDER: z.enum(['smtp', 'resend']).optional().default('smtp'),
+    RESEND_API_KEY: z.string().optional().default(''),
     SMTP_HOST: z.string().optional().default(''),
     SMTP_PORT: z.coerce.number().default(587),
     SMTP_SECURE: z

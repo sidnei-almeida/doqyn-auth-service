@@ -1,6 +1,8 @@
 import { loadEnv } from '../../config/env.js';
 import type { EmailMessage, EmailSender, SmtpTransportConfig } from './email.types.js';
+import type { ResendConfig } from './resendEmailSender.js';
 import { sendViaSmtp } from './smtpEmailSender.js';
+import { sendViaResend } from './resendEmailSender.js';
 
 /** Adapter de desenvolvimento — não loga conteúdo sensível (tokens/links completos). */
 export class ConsoleEmailSender implements EmailSender {
@@ -41,6 +43,27 @@ export function resetEmailSenderForTests(sender?: EmailSender): void {
   cachedSender = sender ?? new ConsoleEmailSender();
 }
 
+/**
+ * A Resend da plataforma, quando escolhida e com chave. `null` diz "não configurada", que é
+ * diferente de "não escolhida" — as duas caem no mesmo lugar, mas só uma é engano.
+ */
+export function getResendConfig(): ResendConfig | null {
+  const env = loadEnv();
+  if (env.EMAIL_PROVIDER !== 'resend') return null;
+  if (!env.RESEND_API_KEY?.trim()) return null;
+  return {
+    apiKey: env.RESEND_API_KEY.trim(),
+    defaultFrom: getPlatformSender(),
+  };
+}
+
+/**
+ * A ordem importa, e é esta.
+ *
+ * O SMTP próprio do tenant vence sobre o provedor da plataforma: quem configurou o próprio
+ * servidor quer que o e-mail saia do domínio dele, e trocar isso por um remetente nosso mudaria
+ * o que o destinatário vê. Só depois vem a plataforma — Resend se escolhida, SMTP se não.
+ */
 export async function sendEmail(
   message: EmailMessage,
   transport?: SmtpTransportConfig,
@@ -56,6 +79,12 @@ export async function sendEmail(
     return;
   }
 
+  const resend = getResendConfig();
+  if (resend) {
+    await sendViaResend(resend, message);
+    return;
+  }
+
   const fallback = getFallbackSmtpTransport();
   if (fallback) {
     await sendViaSmtp(fallback, message);
@@ -65,9 +94,17 @@ export async function sendEmail(
   await getEmailSender().send(message);
 }
 
-/** O envio real só acontece com EMAIL_ENABLED e SMTP da plataforma configurado. */
+/**
+ * O envio real só acontece com `EMAIL_ENABLED` e algum provedor de plataforma de pé.
+ *
+ * Precisa contar a Resend junto com o SMTP: enquanto olhava só para o SMTP, uma instalação
+ * inteiramente na Resend se declarava não configurada, e o convite voltava com
+ * `smtp_not_configured` depois de ter sido entregue.
+ */
 export function isPlatformEmailConfigured(): boolean {
-  return loadEnv().EMAIL_ENABLED && getFallbackSmtpTransport() !== null;
+  const env = loadEnv();
+  if (!env.EMAIL_ENABLED) return false;
+  return getResendConfig() !== null || getFallbackSmtpTransport() !== null;
 }
 
 export function getPlatformSender(): { name: string; email: string } {

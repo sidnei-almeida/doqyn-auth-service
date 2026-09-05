@@ -21,7 +21,19 @@ export default [
         clearTimeout: 'readonly',
         URL: 'readonly',
         URLSearchParams: 'readonly',
+        // A lista acompanha o que o Node 22 já oferece por padrão. `fetch` estava aqui, mas os
+        // tipos que vêm junto dele não — e usar `fetch` sem poder nomear `Response` obrigava a
+        // desligar a regra no arquivo.
         fetch: 'readonly',
+        Response: 'readonly',
+        Request: 'readonly',
+        Headers: 'readonly',
+        AbortSignal: 'readonly',
+        AbortController: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        global: 'readonly',
+        NodeJS: 'readonly',
       },
     },
     plugins: {

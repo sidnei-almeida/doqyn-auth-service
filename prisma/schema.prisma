@@ -297,7 +297,6 @@ model AuthTenant {
   accessRequests AuthAccessRequest[]
   termsAcceptances AuthTermsAcceptance[]
   invites        AuthInvite[]
-  outboundEmail  AuthTenantOutboundEmail?
 
   @@index([taxIdHash])
   @@index([status])
@@ -564,21 +563,3 @@ model AuthInviteAccessGroup {
   @@map("auth_invite_access_groups")
 }
 
-model AuthTenantOutboundEmail {
-  id                    String    @id @default(uuid()) @db.Uuid
-  tenantId              String    @unique @map("tenant_id") @db.Uuid
-  smtpHost              String    @map("smtp_host")
-  smtpPort              Int       @default(587) @map("smtp_port")
-  smtpSecure            Boolean   @default(false) @map("smtp_secure")
-  smtpUserEncrypted     String    @map("smtp_user_encrypted")
-  smtpPasswordEncrypted String    @map("smtp_password_encrypted")
-  fromDomain            String    @map("from_domain")
-  enabled               Boolean   @default(true)
-  lastVerifiedAt        DateTime? @map("last_verified_at")
-  createdAt             DateTime  @default(now()) @map("created_at")
-  updatedAt             DateTime  @updatedAt @map("updated_at")
-
-  tenant AuthTenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@map("auth_tenant_outbound_email")
-}

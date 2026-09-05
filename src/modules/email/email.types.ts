@@ -12,6 +12,7 @@ export type EmailMessage = {
   replyTo?: EmailAddress;
 };
 
+/** O SMTP da plataforma. Não há mais SMTP por tenant — tudo sai pela DOQYN. */
 export type SmtpTransportConfig = {
   host: string;
   port: number;
@@ -21,5 +22,5 @@ export type SmtpTransportConfig = {
 };
 
 export interface EmailSender {
-  send(message: EmailMessage, transport?: SmtpTransportConfig): Promise<void>;
+  send(message: EmailMessage): Promise<void>;
 }

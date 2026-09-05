@@ -6,19 +6,14 @@ import { sendViaResend } from './resendEmailSender.js';
 
 /** Adapter de desenvolvimento — não loga conteúdo sensível (tokens/links completos). */
 export class ConsoleEmailSender implements EmailSender {
-  async send(message: EmailMessage, transport?: SmtpTransportConfig): Promise<void> {
+  async send(message: EmailMessage): Promise<void> {
     const env = loadEnv();
     if (env.NODE_ENV === 'test') return;
     console.info('[email] queued', {
       to: redactEmail(message.to),
-      from: message.from
-        ? redactEmail(message.from.email)
-        : transport?.user
-          ? redactEmail(transport.user)
-          : undefined,
+      from: message.from ? redactEmail(message.from.email) : undefined,
       subject: message.subject,
       textLength: message.text.length,
-      transportHost: transport?.host,
     });
   }
 }
@@ -58,24 +53,17 @@ export function getResendConfig(): ResendConfig | null {
 }
 
 /**
- * A ordem importa, e é esta.
+ * Todo e-mail sai pela DOQYN. Resend se escolhida, SMTP da plataforma se não.
  *
- * O SMTP próprio do tenant vence sobre o provedor da plataforma: quem configurou o próprio
- * servidor quer que o e-mail saia do domínio dele, e trocar isso por um remetente nosso mudaria
- * o que o destinatário vê. Só depois vem a plataforma — Resend se escolhida, SMTP se não.
+ * Houve um ramo aqui para o SMTP próprio de cada tenant, e ele vencia sobre a plataforma. O
+ * recurso foi eliminado do produto: nenhum chamador passava transporte e a tabela que o
+ * guardava não tinha leitor. Restou como parâmetro opcional, que é a forma mais discreta de
+ * código morto — some sem erro e ninguém percebe que a alternativa não existe.
  */
-export async function sendEmail(
-  message: EmailMessage,
-  transport?: SmtpTransportConfig,
-): Promise<void> {
+export async function sendEmail(message: EmailMessage): Promise<void> {
   const env = loadEnv();
   if (!env.EMAIL_ENABLED) {
-    await getEmailSender().send(message, transport);
-    return;
-  }
-
-  if (transport) {
-    await sendViaSmtp(transport, message);
+    await getEmailSender().send(message);
     return;
   }
 

@@ -13,10 +13,7 @@ import { normalizeEmail, normalizePhone } from '../../utils/normalize.js';
 import { auditCtx, logAuthAudit } from '../audit/authAudit.service.js';
 import { assertCanGrantRoles, resolveTenantScope } from '../admin/adminAuthorization.js';
 import type { AdminActor } from '../admin/admin.types.js';
-import {
-  setMembershipAccessGroups,
-  setMembershipRoles,
-} from '../memberships/memberships.service.js';
+import { setMembershipRoles } from '../memberships/memberships.service.js';
 import {
   claimUsername,
   findUserByEmailLookup,
@@ -80,45 +77,8 @@ async function findInviteByToken(token: string) {
     include: {
       roles: true,
       tenant: true,
-      // O grupo inteiro, não só o vínculo: `setMembershipAccessGroups` trabalha com o `groupId`
-      // de texto, e o preview mostra o nome ao convidado antes de ele aceitar.
-      accessGroups: { include: { accessGroup: true } },
     },
   });
-}
-
-/**
- * Traduz os `groupId` de texto para os UUIDs internos, recusando o que não serve.
- *
- * A checagem é aqui, na criação, e não no accept, por uma razão de quem usa: um grupo inválido
- * descoberto no accept viraria erro na cara do convidado, por uma escolha que não foi dele.
- * Aqui o erro é do convidador, que ainda está com a tela aberta e pode corrigir.
- *
- * Grupo inativo é recusado junto com o inexistente: convidar para um grupo desligado promete um
- * acesso que não vai existir do outro lado.
- */
-async function resolveInviteAccessGroups(
-  tenantUuid: string,
-  accessGroupIds: string[],
-): Promise<string[]> {
-  const wanted = [...new Set(accessGroupIds.map((id) => id.trim()).filter(Boolean))];
-  if (wanted.length === 0) return [];
-
-  const groups = await prisma.authAccessGroup.findMany({
-    where: { tenantId: tenantUuid, groupId: { in: wanted }, status: 'active' },
-    select: { id: true, groupId: true },
-  });
-
-  const encontrados = new Set(groups.map((group) => group.groupId));
-  const faltando = wanted.filter((id) => !encontrados.has(id));
-  if (faltando.length > 0) {
-    throw new ValidationError(
-      `Grupo de acesso não encontrado ou inativo: ${faltando.join(', ')}.`,
-      'INVITE_ACCESS_GROUP_INVALID',
-    );
-  }
-
-  return groups.map((group) => group.id);
 }
 
 export async function createInvite(actor: AdminActor, input: CreateInviteInput, ipHash?: string) {
@@ -131,7 +91,6 @@ export async function createInvite(actor: AdminActor, input: CreateInviteInput, 
   assertCanGrantRoles(actor, roles);
 
   const tenant = await getTenantUuid(actor, input.tenantId);
-  const accessGroupUuids = await resolveInviteAccessGroups(tenant.id, input.accessGroupIds);
   const emailLookupHash = hashLookup(email);
   const expiresAt = new Date(Date.now() + loadEnv().INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
   const token = generateInviteToken();
@@ -167,9 +126,6 @@ export async function createInvite(actor: AdminActor, input: CreateInviteInput, 
   if (existingPending) {
     const updated = await prisma.$transaction(async (tx) => {
       await tx.authInviteRole.deleteMany({ where: { inviteId: existingPending.id } });
-      // Reconvite reescreve a decisão inteira. Somar aos grupos antigos faria o segundo convite
-      // conceder mais do que o convidador acabou de escolher na tela.
-      await tx.authInviteAccessGroup.deleteMany({ where: { inviteId: existingPending.id } });
       const invite = await tx.authInvite.update({
         where: { id: existingPending.id },
         data: {
@@ -187,9 +143,6 @@ export async function createInvite(actor: AdminActor, input: CreateInviteInput, 
       });
       await tx.authInviteRole.createMany({
         data: roles.map((role) => ({ inviteId: invite.id, role })),
-      });
-      await tx.authInviteAccessGroup.createMany({
-        data: accessGroupUuids.map((accessGroupId) => ({ inviteId: invite.id, accessGroupId })),
       });
       return invite;
     });
@@ -211,9 +164,6 @@ export async function createInvite(actor: AdminActor, input: CreateInviteInput, 
       });
       await tx.authInviteRole.createMany({
         data: roles.map((role) => ({ inviteId: invite.id, role })),
-      });
-      await tx.authInviteAccessGroup.createMany({
-        data: accessGroupUuids.map((accessGroupId) => ({ inviteId: invite.id, accessGroupId })),
       });
       return invite;
     });
@@ -322,11 +272,6 @@ export async function getInviteByToken(token: string) {
         : invite.tenant.tenantId,
       tenantTaxIdMasked: invite.tenant.taxIdMasked ?? undefined,
       roles: invite.roles.map((role) => role.role),
-      // Quem aceita merece saber a que está sendo dado acesso, e não descobrir depois de entrar.
-      accessGroups: invite.accessGroups.map((link) => ({
-        groupId: link.accessGroup.groupId,
-        name: decryptField(link.accessGroup.nameEncrypted),
-      })),
       expiresAt: invite.expiresAt.toISOString(),
       requiresAccountCreation: !existingUser,
       requiresPassword: !existingCredential,
@@ -539,12 +484,6 @@ export async function acceptInvite(
   });
 
   await setMembershipRoles(result.membershipId, roles);
-  // O que a aprovação fazia, o convite passa a fazer. Sem isto o convidado entra ativo e não
-  // enxerga documento nenhum, porque a governança concede ao grupo, nunca à pessoa solta.
-  const accessGroupIds = invite.accessGroups.map((link) => link.accessGroup.groupId);
-  if (accessGroupIds.length > 0) {
-    await setMembershipAccessGroups(result.membershipId, invite.tenantId, accessGroupIds);
-  }
   await awaitTenantMemberSync(result.membershipId);
 
   let sessionToken: string | undefined;

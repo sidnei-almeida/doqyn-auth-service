@@ -1,4 +1,3 @@
-import type { TenantRole } from '@prisma/client';
 import {
   addMemberToGroup,
   createAccessGroup,
@@ -20,7 +19,6 @@ export {
   approveMembership,
   blockMembership,
   getMemberDetail,
-  listAccessRequestsForAdmin,
   listMembers,
   rejectMembership,
   removeMember,

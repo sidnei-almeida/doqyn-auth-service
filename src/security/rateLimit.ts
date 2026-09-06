@@ -86,10 +86,6 @@ export async function checkSignupRateLimit(ipHash: string): Promise<void> {
   await checkLimit(`signup:ip:${ipHash}`, 8);
 }
 
-export async function checkAccessRequestRateLimit(ipHash: string): Promise<void> {
-  await checkLimit(`access-request:ip:${ipHash}`, 10);
-}
-
 /**
  * A conferência de apelido é digitada, então o teto é alto — e existe mesmo assim.
  *

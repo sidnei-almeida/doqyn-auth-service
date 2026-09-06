@@ -61,14 +61,6 @@ function buildReportJson(input: DemoSeedReportInput) {
       displayName: company.displayName,
       cnpj: company.cnpj,
       accessGroups: company.accessGroups.map((group) => group.name),
-      pendingUsers: company.pendingUsers.map((user) => ({
-        email: user.email,
-        displayName: user.displayName,
-        jobTitle: user.jobTitle,
-        departmentText: user.departmentText,
-        personType: user.personType,
-        status: user.status,
-      })),
     })),
   };
 }
@@ -114,15 +106,6 @@ function buildReportMarkdown(input: DemoSeedReportInput): string {
     lines.push(`- Tenant: \`${company.tenantId}\``);
     lines.push(`- CNPJ: \`${company.cnpj}\``);
     lines.push(`- Grupos de acesso: ${company.accessGroups.map((g) => g.name).join(', ')}`);
-    lines.push(`- Pendências: ${company.pendingUsers.length}`);
-    lines.push('');
-    for (const user of company.pendingUsers) {
-      lines.push(`- \`${user.email}\` — ${user.displayName}`);
-      lines.push(`  - Cargo: ${user.jobTitle}`);
-      lines.push(`  - Setor: ${user.departmentText}`);
-      lines.push(`  - Tipo: ${user.personType.toUpperCase()}`);
-      lines.push(`  - Motivo: ${user.reason}`);
-    }
     lines.push('');
   }
 

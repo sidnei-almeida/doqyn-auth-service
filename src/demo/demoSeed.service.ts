@@ -1,9 +1,6 @@
 import type { TenantRole } from '@prisma/client';
 import { prisma } from '../db/prisma.js';
 import { buildGroupId } from '../modules/access-groups/accessGroups.service.js';
-import { CONSENT_TEXT_VERSION } from '../modules/access-requests/accessRequests.constants.js';
-import { recordTermsAcceptance } from '../modules/terms/termsAcceptance.service.js';
-import { DOQYN_TERMS_VERSION } from '../modules/terms/terms.constants.js';
 import { encryptField, hashLookup } from '../security/crypto.js';
 import { claimUsername } from '../modules/users/users.service.js';
 import { hashPassword } from '../security/password.js';
@@ -24,7 +21,6 @@ import {
   DEMO_SEED_SOURCE,
   type DemoCompanyDef,
   type DemoTenantMemberDef,
-  type DemoPendingUserDef,
 } from './demoSeed.constants.js';
 import { assertDemoSeedSafe } from './demoSeed.guard.js';
 import {
@@ -32,14 +28,11 @@ import {
   type DemoSeedManifest,
   type DemoSeedManifestAccessGroup,
   type DemoSeedManifestCompany,
-  type DemoSeedManifestPendingUser,
   type DemoSeedManifestGlobalAdmin,
   writeDemoSeedManifest,
 } from './demoSeed.manifest.js';
 import { writeDemoSeedReport } from './demoSeed.report.js';
 
-const DEMO_IP_HASH = hashLookup(`${DEMO_SEED_SOURCE}:ip`);
-const DEMO_USER_AGENT_HASH = hashLookup(`${DEMO_SEED_SOURCE}:user-agent`);
 
 function credentialUpdatePayload(passwordHash: string) {
   return process.env.SEED_FORCE_PASSWORD_RESET === 'true' ? { passwordHash } : {};
@@ -135,25 +128,7 @@ async function ensureBusinessTenant(company: DemoCompanyDef) {
   });
 }
 
-async function resetDemoMembershipToPending(membershipId: string) {
-  await prisma.authMembershipRole.deleteMany({ where: { membershipId } });
-  await prisma.authMembershipAccessGroup.deleteMany({ where: { membershipId } });
-  await prisma.authMembership.update({
-    where: { id: membershipId },
-    data: {
-      status: 'pending',
-      approvedAt: null,
-      approvedByMembershipId: null,
-      rejectedAt: null,
-      rejectedByMembershipId: null,
-      rejectedReasonEncrypted: null,
-      blockedAt: null,
-      blockedByMembershipId: null,
-      removedAt: null,
-      removedByMembershipId: null,
-    },
-  });
-}
+
 
 /**
  * O handle do usuário semeado, e só quando ele ainda não tem um.
@@ -173,185 +148,6 @@ async function ensureSeedUsername(
 
   const username = await claimUsername(prisma, chosen, email);
   await prisma.authUser.update({ where: { id: userId }, data: { username } });
-}
-
-async function ensurePendingAccessRequest(input: {
-  tenantUuid: string;
-  tenantTextId: string;
-  tenantDisplayName: string;
-  user: DemoPendingUserDef;
-  passwordHash: string;
-  resetPending: boolean;
-}): Promise<DemoSeedManifestPendingUser> {
-  const normalizedEmail = normalizeEmail(input.user.email);
-  const emailLookupHash = hashLookup(normalizedEmail);
-  const normalizedPhone = normalizePhone(input.user.whatsapp);
-  const taxId = normalizeTaxId(input.user.taxId);
-  const taxIdHash = hashLookup(taxId);
-  const displayName = `${input.user.firstName} ${input.user.lastName}`.trim();
-
-  const user = await prisma.authUser.upsert({
-    where: { emailLookupHash },
-    create: {
-      emailEncrypted: encryptField(normalizedEmail),
-      emailLookupHash,
-      firstNameEncrypted: encryptField(input.user.firstName),
-      lastNameEncrypted: encryptField(input.user.lastName),
-      whatsappEncrypted: encryptField(normalizedPhone),
-      whatsappLookupHash: hashLookup(normalizedPhone),
-      status: 'active',
-      emailVerified: true,
-    },
-    update: {
-      firstNameEncrypted: encryptField(input.user.firstName),
-      lastNameEncrypted: encryptField(input.user.lastName),
-      whatsappEncrypted: encryptField(normalizedPhone),
-      whatsappLookupHash: hashLookup(normalizedPhone),
-      status: 'active',
-      emailVerified: true,
-    },
-  });
-
-  await ensureSeedUsername(user.id, user.username, input.user.username, normalizedEmail);
-
-  await prisma.authCredential.upsert({
-    where: { userId: user.id },
-    create: { userId: user.id, passwordHash: input.passwordHash },
-    update: credentialUpdatePayload(input.passwordHash),
-  });
-
-  let membership = await prisma.authMembership.findUnique({
-    where: { userId_tenantId: { userId: user.id, tenantId: input.tenantUuid } },
-  });
-
-  if (!membership) {
-    membership = await prisma.authMembership.create({
-      data: {
-        userId: user.id,
-        tenantId: input.tenantUuid,
-        status: 'pending',
-        requestedJobTitleEncrypted: encryptField(input.user.jobTitle),
-        requestedDepartmentEncrypted: encryptField(input.user.departmentText),
-        requestedReasonEncrypted: encryptField(input.user.reason),
-      },
-    });
-  } else if (input.resetPending || membership.status === 'pending') {
-    await prisma.authMembership.update({
-      where: { id: membership.id },
-      data: {
-        status: 'pending',
-        requestedJobTitleEncrypted: encryptField(input.user.jobTitle),
-        requestedDepartmentEncrypted: encryptField(input.user.departmentText),
-        requestedReasonEncrypted: encryptField(input.user.reason),
-        approvedAt: null,
-        approvedByMembershipId: null,
-        rejectedAt: null,
-        rejectedByMembershipId: null,
-        rejectedReasonEncrypted: null,
-        blockedAt: null,
-        blockedByMembershipId: null,
-        removedAt: null,
-        removedByMembershipId: null,
-      },
-    });
-    await prisma.authMembershipRole.deleteMany({ where: { membershipId: membership.id } });
-    await prisma.authMembershipAccessGroup.deleteMany({ where: { membershipId: membership.id } });
-    membership = await prisma.authMembership.findUniqueOrThrow({ where: { id: membership.id } });
-  }
-
-  if (input.resetPending && membership.status !== 'pending') {
-    await resetDemoMembershipToPending(membership.id);
-    membership = await prisma.authMembership.findUniqueOrThrow({ where: { id: membership.id } });
-  }
-
-  let accessRequest = await prisma.authAccessRequest.findFirst({
-    where: {
-      userId: user.id,
-      tenantId: input.tenantUuid,
-      status: 'pending',
-    },
-    orderBy: { requestedAt: 'desc' },
-  });
-
-  if (!accessRequest) {
-    accessRequest = await prisma.authAccessRequest.create({
-      data: {
-        userId: user.id,
-        tenantId: input.tenantUuid,
-        membershipId: membership.id,
-        status: 'pending',
-        personType: input.user.personType,
-        taxIdType: detectTaxIdType(taxId),
-        taxIdMasked: maskTaxId(taxId),
-        taxIdHash,
-        tenantDisplayNameEncrypted: encryptField(input.tenantDisplayName),
-        jobTitleEncrypted: encryptField(input.user.jobTitle),
-        departmentEncrypted: encryptField(input.user.departmentText),
-        reasonEncrypted: encryptField(input.user.reason),
-        operationalNotificationsConsent: input.user.operationalNotificationsConsent,
-        consentTextVersion: CONSENT_TEXT_VERSION,
-      },
-    });
-  } else {
-    accessRequest = await prisma.authAccessRequest.update({
-      where: { id: accessRequest.id },
-      data: {
-        membershipId: membership.id,
-        status: 'pending',
-        personType: input.user.personType,
-        taxIdType: detectTaxIdType(taxId),
-        taxIdMasked: maskTaxId(taxId),
-        taxIdHash,
-        tenantDisplayNameEncrypted: encryptField(input.tenantDisplayName),
-        jobTitleEncrypted: encryptField(input.user.jobTitle),
-        departmentEncrypted: encryptField(input.user.departmentText),
-        reasonEncrypted: encryptField(input.user.reason),
-        operationalNotificationsConsent: input.user.operationalNotificationsConsent,
-        consentTextVersion: CONSENT_TEXT_VERSION,
-        requestedAt: new Date(),
-      },
-    });
-  }
-
-  const existingTerms = await prisma.authTermsAcceptance.findFirst({
-    where: { accessRequestId: accessRequest.id },
-    orderBy: { acceptedAt: 'desc' },
-  });
-
-  if (!existingTerms) {
-    await recordTermsAcceptance({
-      flow: 'access_request',
-      termsVersion: DOQYN_TERMS_VERSION,
-      userId: user.id,
-      membershipId: membership.id,
-      tenantId: input.tenantUuid,
-      accessRequestId: accessRequest.id,
-      ipAddressHash: DEMO_IP_HASH,
-      userAgentHash: DEMO_USER_AGENT_HASH,
-    });
-  }
-
-  await prisma.authNotificationPreference.upsert({
-    where: { membershipId: membership.id },
-    create: { membershipId: membership.id },
-    update: {},
-  });
-
-  return {
-    seedKey: input.user.seedKey,
-    email: input.user.email,
-    displayName,
-    whatsapp: input.user.whatsapp,
-    personType: input.user.personType,
-    taxIdMasked: maskTaxId(taxId),
-    jobTitle: input.user.jobTitle,
-    departmentText: input.user.departmentText,
-    reason: input.user.reason,
-    operationalNotificationsConsent: input.user.operationalNotificationsConsent,
-    membershipId: membership.id,
-    accessRequestId: accessRequest.id,
-    status: 'pending',
-  };
 }
 
 async function ensureDemoCompanyTenant() {
@@ -485,7 +281,6 @@ export async function runDemoSeed(options: RunDemoSeedOptions = {}): Promise<Run
 
   const repoRoot = options.repoRoot ?? process.cwd();
   const password = options.password ?? process.env.DEMO_SEED_PASSWORD ?? DEMO_SEED_DEFAULT_PASSWORD;
-  const resetPending = options.resetPending ?? process.env.DEMO_SEED_RESET_PENDING !== 'false';
   const passwordHash = await hashPassword(password);
   const manifestPath = options.manifestPath ?? defaultManifestPath(repoRoot);
 
@@ -507,20 +302,6 @@ export async function runDemoSeed(options: RunDemoSeedOptions = {}): Promise<Run
     const tenant = await ensureBusinessTenant(company);
     const accessGroups = await ensureAccessGroups(tenant.id, company.accessGroups);
 
-    const pendingUsers: DemoSeedManifestPendingUser[] = [];
-    for (const user of company.pendingUsers) {
-      pendingUsers.push(
-        await ensurePendingAccessRequest({
-          tenantUuid: tenant.id,
-          tenantTextId: tenant.tenantId,
-          tenantDisplayName: company.displayName,
-          user,
-          passwordHash,
-          resetPending,
-        }),
-      );
-    }
-
     companies.push({
       seedKey: company.seedKey,
       tenantId: company.tenantId,
@@ -531,7 +312,6 @@ export async function runDemoSeed(options: RunDemoSeedOptions = {}): Promise<Run
       slug: company.slug,
       status: 'active',
       accessGroups,
-      pendingUsers,
     });
   }
 

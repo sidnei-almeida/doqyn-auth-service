@@ -9,21 +9,6 @@ export type DemoSeedManifestAccessGroup = {
   name: string;
 };
 
-export type DemoSeedManifestPendingUser = {
-  seedKey: string;
-  email: string;
-  displayName: string;
-  whatsapp: string;
-  personType: 'cpf' | 'cnpj';
-  taxIdMasked: string;
-  jobTitle: string;
-  departmentText: string;
-  reason: string;
-  operationalNotificationsConsent: boolean;
-  membershipId: string;
-  accessRequestId: string;
-  status: 'pending';
-};
 
 export type DemoSeedManifestCompany = {
   seedKey: string;
@@ -35,7 +20,6 @@ export type DemoSeedManifestCompany = {
   slug: string;
   status: 'active';
   accessGroups: DemoSeedManifestAccessGroup[];
-  pendingUsers: DemoSeedManifestPendingUser[];
 };
 
 export type DemoSeedManifestGlobalAdmin = {

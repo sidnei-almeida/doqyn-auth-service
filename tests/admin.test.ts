@@ -38,7 +38,6 @@ describe('admin', () => {
 
     const user = await createTestUser('aprovado@empresa.com', 'senha-segura-123');
     const target = await createTestMembership(user.id, tenant.id, 'pending');
-    await prismaAccessRequest(target.id, user.id, tenant.id);
 
     const { token } = await loginUser(app, 'admin.approve@empresa.com', 'senha-segura-123', cookieName);
 
@@ -124,7 +123,6 @@ describe('admin', () => {
 
     const user = await createTestUser('rejeitado@empresa.com', 'senha-segura-123');
     const target = await createTestMembership(user.id, tenant.id, 'pending');
-    await prismaAccessRequest(target.id, user.id, tenant.id);
 
     const { token } = await loginUser(app, 'admin.reject@empresa.com', 'senha-segura-123', cookieName);
 
@@ -170,17 +168,3 @@ describe('admin', () => {
   });
 });
 
-async function prismaAccessRequest(membershipId: string, userId: string, tenantId: string) {
-  const { prisma } = await import('../src/db/prisma.js');
-  await prisma.authAccessRequest.create({
-    data: {
-      userId,
-      tenantId,
-      membershipId,
-      status: 'pending',
-      personType: 'business',
-      taxIdType: 'cnpj',
-      taxIdMasked: '**.***.***/****-99',
-    },
-  });
-}

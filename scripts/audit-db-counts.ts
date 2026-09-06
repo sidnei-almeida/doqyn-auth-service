@@ -37,7 +37,6 @@ async function main(): Promise<void> {
     ['auth_membership_roles', () => prisma.authMembershipRole.count()],
     ['auth_access_groups', () => prisma.authAccessGroup.count()],
     ['auth_membership_access_groups', () => prisma.authMembershipAccessGroup.count()],
-    ['auth_access_requests', () => prisma.authAccessRequest.count()],
     ['auth_audit_logs', () => prisma.authAuditLog.count()],
     ['auth_login_attempts', () => prisma.authLoginAttempt.count()],
     ['auth_password_resets', () => prisma.authPasswordReset.count()],

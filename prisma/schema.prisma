@@ -48,13 +48,6 @@ enum TenantRole {
   user
 }
 
-enum AccessRequestStatus {
-  pending
-  approved
-  rejected
-  cancelled
-}
-
 enum InviteStatus {
   pending
   accepted
@@ -119,7 +112,6 @@ model AuthUser {
   emailChanges       AuthEmailChange[]
   auditLogs          AuthAuditLog[]
   memberships        AuthMembership[]
-  accessRequests     AuthAccessRequest[]
   deletionRequests   AuthAccountDeletionRequest[]
   termsAcceptances   AuthTermsAcceptance[]
   oauthAccounts      AuthOAuthAccount[]
@@ -294,7 +286,6 @@ model AuthTenant {
 
   memberships    AuthMembership[]
   accessGroups   AuthAccessGroup[]
-  accessRequests AuthAccessRequest[]
   termsAcceptances AuthTermsAcceptance[]
   invites        AuthInvite[]
 
@@ -329,7 +320,6 @@ model AuthMembership {
   roles                  AuthMembershipRole[]
   accessGroupLinks       AuthMembershipAccessGroup[]
   notificationPreference AuthNotificationPreference?
-  accessRequests         AuthAccessRequest[]
   activeSessions         AuthSession[]
   termsAcceptances       AuthTermsAcceptance[]
 
@@ -385,35 +375,6 @@ model AuthMembershipAccessGroup {
   @@map("auth_membership_access_groups")
 }
 
-model AuthAccessRequest {
-  id                              String              @id @default(uuid()) @db.Uuid
-  userId                          String              @map("user_id") @db.Uuid
-  tenantId                        String              @map("tenant_id") @db.Uuid
-  membershipId                    String?             @map("membership_id") @db.Uuid
-  status                          AccessRequestStatus @default(pending)
-  personType                      String              @map("person_type")
-  taxIdType                       String              @map("tax_id_type")
-  taxIdMasked                     String?             @map("tax_id_masked")
-  taxIdHash                       String?             @map("tax_id_hash")
-  tenantDisplayNameEncrypted      String?             @map("tenant_display_name_encrypted")
-  jobTitleEncrypted               String?             @map("job_title_encrypted")
-  departmentEncrypted             String?             @map("department_encrypted")
-  reasonEncrypted                 String?             @map("reason_encrypted")
-  operationalNotificationsConsent Boolean             @default(false) @map("operational_notifications_consent")
-  consentTextVersion              String?             @map("consent_text_version")
-  requestedAt                     DateTime            @default(now()) @map("requested_at")
-  decidedAt                       DateTime?           @map("decided_at")
-  decidedByMembershipId           String?             @map("decided_by_membership_id") @db.Uuid
-  createdAt                       DateTime            @default(now()) @map("created_at")
-  updatedAt                       DateTime            @updatedAt @map("updated_at")
-
-  user       AuthUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tenant     AuthTenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  membership AuthMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
-  termsAcceptances AuthTermsAcceptance[]
-
-  @@map("auth_access_requests")
-}
 
 model AuthNotificationPreference {
   id                        String   @id @default(uuid()) @db.Uuid
@@ -453,7 +414,6 @@ model AuthTermsAcceptance {
   userId          String?             @map("user_id") @db.Uuid
   membershipId    String?             @map("membership_id") @db.Uuid
   tenantId        String?             @map("tenant_id") @db.Uuid
-  accessRequestId String?             @map("access_request_id") @db.Uuid
   flow            TermsAcceptanceFlow
   termsVersion    String              @map("terms_version")
   privacyVersion  String?             @map("privacy_version")
@@ -465,12 +425,10 @@ model AuthTermsAcceptance {
   user          AuthUser?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   membership    AuthMembership?    @relation(fields: [membershipId], references: [id], onDelete: SetNull)
   tenant        AuthTenant?        @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  accessRequest AuthAccessRequest? @relation(fields: [accessRequestId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([membershipId])
   @@index([tenantId])
-  @@index([accessRequestId])
   @@index([flow])
   @@map("auth_terms_acceptances")
 }

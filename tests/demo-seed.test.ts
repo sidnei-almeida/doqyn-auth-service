@@ -29,17 +29,14 @@ describe('demo seed', () => {
     expect(pkg.scripts['dev:seed:demo']).not.toContain('src/db/seed.ts');
   });
 
-  it('define empresas demo com CNPJ e pendências', () => {
+  it('define empresas demo com CNPJ, e sem fila de pendências', () => {
     expect(DEMO_COMPANIES).toHaveLength(4);
     for (const company of DEMO_COMPANIES) {
       expect(company.cnpj).toMatch(/^\d{14}$/);
-      expect(company.pendingUsers.length).toBeGreaterThanOrEqual(2);
-      for (const user of company.pendingUsers) {
-        expect(user.jobTitle.length).toBeGreaterThan(0);
-        expect(user.departmentText.length).toBeGreaterThan(0);
-        expect(user.reason.length).toBeGreaterThan(0);
-        expect(user.operationalNotificationsConsent).toBe(true);
-      }
+      expect(company.accessGroups.length).toBeGreaterThanOrEqual(2);
+      // Não há mais gente aguardando aprovação: quem entra numa empresa entra convidado, e o
+      // convite já é a aprovação. Semear pendentes deixaria linhas que ninguém resolve.
+      expect('pendingUsers' in company).toBe(false);
     }
   });
 

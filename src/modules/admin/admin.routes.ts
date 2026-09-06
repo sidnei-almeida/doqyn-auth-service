@@ -19,7 +19,6 @@ import {
   createTenantAdmin,
   getMemberDetail,
   getTenant,
-  listAccessRequestsForAdmin,
   listMembers,
   listTenants,
   rejectMembership,
@@ -33,7 +32,6 @@ import {
   updateTenantAdmin,
 } from './admin.service.js';
 import {
-  adminAccessRequestsQuerySchema,
   adminGroupsQuerySchema,
   adminListQuerySchema,
   adminTenantsQuerySchema,
@@ -163,13 +161,6 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const actor = (request as AuthenticatedRequest).adminActor!;
     const result = await revokeMemberSessions(actor, params.membershipId, ctx);
     return reply.send({ ok: true, ...result });
-  });
-
-  app.get('/auth/admin/access-requests', async (request, reply) => {
-    const query = adminAccessRequestsQuerySchema.parse(request.query);
-    const actor = (request as AuthenticatedRequest).adminActor!;
-    const requests = await listAccessRequestsForAdmin(actor, query.tenantId, query.status);
-    return reply.send({ ok: true, requests });
   });
 
   // --- Access groups ---

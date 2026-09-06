@@ -8,14 +8,8 @@ async function main() {
 
   const result = await runDemoSeed();
 
-  const pendingCount = result.manifest.companies.reduce(
-    (sum, company) => sum + company.pendingUsers.length,
-    0,
-  );
-
   console.log('Demo seed concluído:');
   console.log(`  Empresas: ${result.manifest.companies.length}`);
-  console.log(`  Pendências de acesso: ${pendingCount}`);
   console.log(
     `  Admin da empresa: ${result.manifest.globalAdmin.email} (${result.manifest.globalAdmin.tenantId})`,
   );

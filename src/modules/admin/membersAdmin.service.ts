@@ -1,16 +1,12 @@
-import type { AccessRequestStatus, MembershipStatus, TenantRole } from '@prisma/client';
+import type { MembershipStatus, TenantRole } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { decryptField, encryptField } from '../../security/crypto.js';
 import { ForbiddenError, NotFoundError, ValidationError } from '../../utils/errors.js';
 import { normalizeEmail } from '../../utils/normalize.js';
 import {
-  buildConsentFromRecord,
   buildNotificationPreferencesDto,
   buildRequestedAccessFromMembership,
-  buildRequestedAccessFromRecord,
-  serializeAdminAccessRequest,
-} from '../access-requests/accessRequests.admin.js';
-import { listTermsAcceptancesForAccessRequests } from '../terms/termsAcceptance.service.js';
+} from '../memberships/membershipProfile.js';
 import { auditCtx, logAuthAudit } from '../audit/authAudit.service.js';
 import type { PublicMembership, MemberDetailResponse } from '../memberships/memberships.schemas.js';
 import {
@@ -161,15 +157,9 @@ export async function getMemberDetail(
   const user = await findUserById(membership.userId);
   if (!user) throw new NotFoundError('Usuário não encontrado.');
 
-  const [accessRequest, notificationPreferences] = await Promise.all([
-    prisma.authAccessRequest.findFirst({
-      where: { membershipId },
-      orderBy: { requestedAt: 'desc' },
-    }),
-    prisma.authNotificationPreference.findUnique({
-      where: { membershipId },
-    }),
-  ]);
+  const notificationPreferences = await prisma.authNotificationPreference.findUnique({
+    where: { membershipId },
+  });
 
   const tenantDisplayName = membership.tenant.displayNameEncrypted
     ? decryptField(membership.tenant.displayNameEncrypted)
@@ -184,10 +174,9 @@ export async function getMemberDetail(
       displayName: tenantDisplayName,
       status: membership.tenant.status,
     },
-    requestedAccess: accessRequest
-      ? buildRequestedAccessFromRecord(accessRequest)
-      : buildRequestedAccessFromMembership(membership, membership.tenant),
-    consent: accessRequest ? buildConsentFromRecord(accessRequest) : undefined,
+    // O que a pessoa declarou vive na própria membership desde que o pedido de acesso saiu: quem
+    // entra por convite preenche cargo e setor no aceite, e não há segundo registro a consultar.
+    requestedAccess: buildRequestedAccessFromMembership(membership, membership.tenant),
     notificationPreferences: buildNotificationPreferencesDto(notificationPreferences) ?? undefined,
     createdAt: membership.createdAt.toISOString(),
     updatedAt: membership.updatedAt.toISOString(),
@@ -348,15 +337,6 @@ export async function approveMembership(
       where: { id: target.tenantId },
       data: { status: 'active' },
     });
-
-    await tx.authAccessRequest.updateMany({
-      where: { membershipId: targetMembershipId, status: 'pending' },
-      data: {
-        status: 'approved',
-        decidedAt: now,
-        decidedByMembershipId: actor.membership.membershipId,
-      },
-    });
   });
 
   await setMembershipRoles(targetMembershipId, input.roles as TenantRole[]);
@@ -403,14 +383,6 @@ export async function rejectMembership(
       },
     });
 
-    await tx.authAccessRequest.updateMany({
-      where: { membershipId: targetMembershipId, status: 'pending' },
-      data: {
-        status: 'rejected',
-        decidedAt: now,
-        decidedByMembershipId: actor.membership.membershipId,
-      },
-    });
   });
 
   await logAuthAudit(
@@ -524,76 +496,4 @@ export async function unblockMembership(
   const updated = await findMembershipById(targetMembershipId);
   scheduleTenantMemberSync(targetMembershipId);
   return toPublicMembership(updated!);
-}
-
-/**
- * As solicitações de um tenant, já serializadas.
- *
- * Separado de `listAccessRequestsForAdmin` porque existem dois caminhos legítimos até aqui, com
- * autenticações diferentes: a sessão de um administrador (que só pode ver o próprio tenant, e por
- * isso passa por `resolveTenantScope`) e a chave interna do app DOQYN, que já chega com o tenant
- * resolvido e não tem ator. O que os dois compartilham é esta consulta.
- */
-export async function listAccessRequestsByTenant(
-  tenantTextId: string,
-  // Tipo estreito em vez de `string` com cast: o cast dizia ao TypeScript que o valor já estava
-  // conferido quando ninguém o havia conferido, e era isso que deixava um `?status=foo` chegar
-  // cru no filtro do Prisma.
-  status?: AccessRequestStatus,
-) {
-  const tenantFilter = tenantTextId;
-
-  const requests = await prisma.authAccessRequest.findMany({
-    where: {
-      ...(status ? { status } : {}),
-      ...(tenantFilter ? { tenant: { tenantId: tenantFilter } } : {}),
-    },
-    include: {
-      tenant: true,
-      user: true,
-    },
-    orderBy: { requestedAt: 'desc' },
-  });
-
-  const membershipIds = requests
-    .map((request) => request.membershipId)
-    .filter((id): id is string => Boolean(id));
-
-  const notificationPreferences = membershipIds.length
-    ? await prisma.authNotificationPreference.findMany({
-        where: { membershipId: { in: membershipIds } },
-      })
-    : [];
-
-  const prefsByMembership = new Map(
-    notificationPreferences.map((prefs) => [prefs.membershipId, prefs]),
-  );
-
-  const termsByRequest = await listTermsAcceptancesForAccessRequests(
-    requests.map((request) => request.id),
-  );
-
-  return requests.map((request) =>
-    serializeAdminAccessRequest({
-      request,
-      user: request.user,
-      tenantTextId: request.tenant.tenantId,
-      tenantDisplayName: request.tenant.displayNameEncrypted
-        ? decryptField(request.tenant.displayNameEncrypted)
-        : null,
-      notificationPreferences: request.membershipId
-        ? (prefsByMembership.get(request.membershipId) ?? null)
-        : null,
-      termsAcceptance: termsByRequest.get(request.id) ?? null,
-    }),
-  );
-}
-
-export async function listAccessRequestsForAdmin(
-  actor: AdminActor,
-  tenantTextId?: string,
-  status?: AccessRequestStatus,
-) {
-  // Idem: solicitações de acesso são sempre as do tenant da sessão.
-  return listAccessRequestsByTenant(resolveTenantScope(actor, tenantTextId), status);
 }

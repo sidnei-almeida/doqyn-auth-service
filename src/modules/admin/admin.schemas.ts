@@ -65,10 +65,6 @@ export const adminListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
-export const adminAccessRequestsQuerySchema = z.object({
-  tenantId: z.string().optional(),
-  status: z.enum(['pending', 'approved', 'rejected', 'cancelled']).optional(),
-});
 
 export const adminGroupsQuerySchema = z.object({
   tenantId: z.string().optional(),

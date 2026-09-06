@@ -1,7 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
 import {
-  formatTermsValidationResponse,
   mapTermsValidationError,
 } from '../terms/termsAcceptance.validation.js';
 import {
@@ -62,8 +61,6 @@ import {
 } from '../email-verification/emailVerification.service.js';
 import { validateSessionByToken } from '../sessions/sessions.service.js';
 import { selectTenantSchema } from '../admin/admin.schemas.js';
-import { accessRequestSchema } from '../access-requests/accessRequests.schemas.js';
-import { submitAccessRequest } from '../access-requests/accessRequests.service.js';
 import {
   companySignupAttachSchema,
   companySignupSchema,
@@ -80,7 +77,6 @@ import { requireSession, type AuthenticatedRequest } from '../admin/adminAuth.js
 import { AUTH_ERROR_MESSAGES } from '../../utils/authErrorCodes.js';
 import { assertDatabaseAvailable } from '../../utils/routeErrors.js';
 import {
-  checkAccessRequestRateLimit,
   checkSignupRateLimit,
   checkUsernameAvailabilityRateLimit,
 } from '../../security/rateLimit.js';
@@ -216,23 +212,6 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       activeMembership: result.context.activeMembership,
       memberships: result.context.memberships,
     });
-  });
-
-  app.post('/auth/access-requests', async (request, reply) => {
-    const parsed = accessRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      const termsError = formatTermsValidationResponse(parsed.error);
-      return reply.status(400).send({
-        ok: false,
-        message: termsError.message,
-        code: termsError.code,
-      });
-    }
-    const ctx = extractRequestContext(request);
-    await checkAccessRequestRateLimit(ctx.ipHash);
-
-    const result = await submitAccessRequest(parsed.data, ctx.ipHash, ctx.userAgentHash);
-    return reply.send(result);
   });
 
   app.post('/auth/company-signups', async (request, reply) => {

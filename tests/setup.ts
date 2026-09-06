@@ -94,7 +94,6 @@ beforeEach(async () => {
   await prisma.authNotificationPreference.deleteMany();
   await prisma.authMembershipAccessGroup.deleteMany();
   await prisma.authMembershipRole.deleteMany();
-  await prisma.authAccessRequest.deleteMany();
   await prisma.authTermsAcceptance.deleteMany();
   await prisma.authInviteRole.deleteMany();
   await prisma.authInvite.deleteMany();

@@ -10,7 +10,6 @@ type RecordTermsAcceptanceInput = {
   userId?: string | null;
   membershipId?: string | null;
   tenantId?: string | null;
-  accessRequestId?: string | null;
   ipAddressHash?: string | null;
   userAgentHash?: string | null;
   acceptedAt?: Date;
@@ -30,7 +29,6 @@ export async function recordTermsAcceptance(
       userId: input.userId ?? null,
       membershipId: input.membershipId ?? null,
       tenantId: input.tenantId ?? null,
-      accessRequestId: input.accessRequestId ?? null,
       ipAddressHash: input.ipAddressHash ?? null,
       userAgentHash: input.userAgentHash ?? null,
       acceptedAt: input.acceptedAt ?? new Date(),
@@ -38,27 +36,3 @@ export async function recordTermsAcceptance(
   });
 }
 
-export async function getLatestTermsAcceptanceForAccessRequest(accessRequestId: string) {
-  return prisma.authTermsAcceptance.findFirst({
-    where: { accessRequestId },
-    orderBy: { acceptedAt: 'desc' },
-  });
-}
-
-export async function listTermsAcceptancesForAccessRequests(accessRequestIds: string[]) {
-  if (accessRequestIds.length === 0)
-    return new Map<string, Prisma.AuthTermsAcceptanceGetPayload<object>>();
-
-  const rows = await prisma.authTermsAcceptance.findMany({
-    where: { accessRequestId: { in: accessRequestIds } },
-    orderBy: { acceptedAt: 'desc' },
-  });
-
-  const map = new Map<string, (typeof rows)[number]>();
-  for (const row of rows) {
-    if (row.accessRequestId && !map.has(row.accessRequestId)) {
-      map.set(row.accessRequestId, row);
-    }
-  }
-  return map;
-}

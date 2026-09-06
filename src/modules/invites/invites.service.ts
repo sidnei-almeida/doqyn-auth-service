@@ -516,6 +516,44 @@ export async function acceptInvite(
   };
 }
 
+/**
+ * Os convites que ainda esperam alguém do outro lado.
+ *
+ * A tela de Usuários mostra a pessoa convidada antes de ela existir como conta, e é daqui que
+ * essa linha vem — não de um registro-fantasma no Mongo do app. O convite já é o dado: tem
+ * e-mail, papéis, quem convidou e prazo. Duplicá-lo do outro lado criaria uma segunda verdade
+ * a reconciliar, e um aceite que falhasse deixaria a cópia para trás.
+ *
+ * Vencidos entram na lista, e de propósito. Some-los faria o convite desaparecer da tela sem que
+ * ninguém tenha sido avisado, e quem administra concluiria que a pessoa entrou. `expiresAt` vai
+ * junto para a tela dizer qual é qual.
+ */
+export async function listPendingInvites(actor: AdminActor, requestedTenantId?: string) {
+  const tenantTextId = resolveTenantScope(actor, requestedTenantId);
+  const tenant = await prisma.authTenant.findUnique({ where: { tenantId: tenantTextId } });
+  if (!tenant) {
+    throw new NotFoundError('Tenant não encontrado.');
+  }
+
+  const invites = await prisma.authInvite.findMany({
+    where: { tenantId: tenant.id, status: 'pending' },
+    include: { roles: true },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return invites.map((invite) => ({
+    inviteId: invite.id,
+    email: decryptField(invite.emailEncrypted),
+    firstName: invite.firstNameEncrypted ? decryptField(invite.firstNameEncrypted) : null,
+    lastName: invite.lastNameEncrypted ? decryptField(invite.lastNameEncrypted) : null,
+    roles: invite.roles.map((role) => role.role),
+    invitedByMembershipId: invite.invitedByMembershipId,
+    invitedByUserId: invite.invitedByUserId,
+    createdAt: invite.createdAt.toISOString(),
+    expiresAt: invite.expiresAt.toISOString(),
+  }));
+}
+
 export async function revokeInvite(actor: AdminActor, inviteId: string, ipHash?: string) {
   const invite = await prisma.authInvite.findUnique({
     where: { id: inviteId },

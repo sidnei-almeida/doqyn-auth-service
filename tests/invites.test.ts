@@ -97,6 +97,51 @@ describe('member invites', () => {
     expect(body.inviteToken).toBeTruthy();
   });
 
+  it('GET /auth/invites lista quem foi convidado e ainda não entrou', async () => {
+    const adminCookie = await loginAsAdmin(app);
+    await createInvite(app, adminCookie, 'aguardando@invite.test', {
+      firstName: 'Aguar',
+      lastName: 'Dando',
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/auth/invites',
+      headers: { cookie: adminCookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const convite = response
+      .json()
+      .invites.find((i: { email: string }) => i.email === 'aguardando@invite.test');
+    expect(convite).toBeTruthy();
+    expect(convite.firstName).toBe('Aguar');
+    expect(convite.roles).toEqual(['user']);
+    // O prazo vai junto: sem ele a tela não distingue convite vivo de convite vencido, e some-lo
+    // faria o administrador concluir que a pessoa entrou.
+    expect(new Date(convite.expiresAt).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('convite aceito sai da lista de pendentes', async () => {
+    const adminCookie = await loginAsAdmin(app);
+    const { inviteToken } = await createInvite(app, adminCookie, 'sumir@invite.test');
+
+    await app.inject({
+      method: 'POST',
+      url: `/auth/invites/${inviteToken}/accept`,
+      payload: buildAcceptPayload(),
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/auth/invites',
+      headers: { cookie: adminCookie },
+    });
+
+    const emails = response.json().invites.map((i: { email: string }) => i.email);
+    expect(emails).not.toContain('sumir@invite.test');
+  });
+
   it('GET /auth/invites/:token retorna dados públicos do convite', async () => {
     const adminCookie = await loginAsAdmin(app);
     const { inviteToken } = await createInvite(app, adminCookie, 'preview@invite.test', {

@@ -8,7 +8,13 @@ import {
   inviteIdParamSchema,
   inviteTokenParamSchema,
 } from './invites.schemas.js';
-import { acceptInvite, createInvite, getInviteByToken, revokeInvite } from './invites.service.js';
+import {
+  acceptInvite,
+  createInvite,
+  getInviteByToken,
+  listPendingInvites,
+  revokeInvite,
+} from './invites.service.js';
 
 export async function inviteRoutes(app: FastifyInstance): Promise<void> {
   app.post('/auth/invites', { preHandler: requireAdminActor }, async (request, reply) => {
@@ -17,6 +23,13 @@ export async function inviteRoutes(app: FastifyInstance): Promise<void> {
     const actor = (request as AuthenticatedRequest).adminActor!;
     const result = await createInvite(actor, body, ctx.ipHash);
     return reply.status(201).send(result);
+  });
+
+  app.get('/auth/invites', { preHandler: requireAdminActor }, async (request, reply) => {
+    const query = (request.query ?? {}) as { tenantId?: string };
+    const actor = (request as AuthenticatedRequest).adminActor!;
+    const invites = await listPendingInvites(actor, query.tenantId);
+    return reply.send({ ok: true, invites });
   });
 
   app.get('/auth/invites/:token', async (request, reply) => {

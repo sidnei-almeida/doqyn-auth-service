@@ -12,6 +12,10 @@ export interface PublicTenant {
   taxIdType: string | null;
   taxIdMasked: string | null;
   status: TenantStatus;
+  /** ISO 3166-1 alpha-2. Decide validação fiscal e formato de telefone — não decide idioma. */
+  country: string | null;
+  /** Idioma de quem ainda não escolheu o seu, e do convite antes de o convidado ter conta. */
+  defaultLocale: string;
 }
 
 export function toPublicTenant(tenant: AuthTenant): PublicTenant {
@@ -24,6 +28,8 @@ export function toPublicTenant(tenant: AuthTenant): PublicTenant {
     taxIdType: tenant.taxIdType,
     taxIdMasked: tenant.taxIdMasked,
     status: tenant.status,
+    country: tenant.country ?? null,
+    defaultLocale: tenant.defaultLocale,
   };
 }
 

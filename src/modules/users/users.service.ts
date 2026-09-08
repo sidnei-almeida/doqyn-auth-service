@@ -22,6 +22,8 @@ export function toPublicUser(user: AuthUser): PublicUser {
       user.avatarStatus === 'active' || user.avatarStatus === 'removed' ? user.avatarStatus : null,
     username: user.username ?? null,
     usernameDiscoverable: user.usernameDiscoverable,
+    locale: user.locale,
+    timeZone: user.timeZone ?? null,
   };
 }
 

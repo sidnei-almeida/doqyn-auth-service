@@ -57,6 +57,7 @@ export type AuditAction =
   | 'tenant.provision_retry_failed'
   | 'account.deletion_requested'
   | 'account.profile_updated'
+  | 'account.preferences_updated'
   | 'auth.oauth_started'
   | 'auth.oauth_completed'
   | 'auth.oauth_failed'

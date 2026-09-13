@@ -185,6 +185,7 @@ export async function submitCompanySignup(
       {
         flow: 'company_registration',
         termsVersion: input.acceptedTermsVersion,
+        locale: input.acceptedTermsLocale,
         userId: user.id,
         membershipId: membership.id,
         tenantId: tenant.id,

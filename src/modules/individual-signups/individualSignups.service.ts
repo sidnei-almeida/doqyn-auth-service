@@ -191,6 +191,7 @@ export async function submitIndividualSignup(
       {
         flow: 'individual_registration',
         termsVersion: input.acceptedTermsVersion,
+        locale: input.acceptedTermsLocale,
         userId: user.id,
         membershipId: membership.id,
         tenantId: tenant.id,

@@ -469,6 +469,7 @@ export async function acceptInvite(
       {
         flow: 'invite_accept',
         termsVersion: input.acceptedTermsVersion,
+        locale: input.acceptedTermsLocale,
         userId,
         membershipId: membership.id,
         tenantId: invite.tenantId,

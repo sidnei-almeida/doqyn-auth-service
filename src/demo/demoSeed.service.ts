@@ -4,6 +4,7 @@ import { buildGroupId } from '../modules/access-groups/accessGroups.service.js';
 import { encryptField, hashLookup } from '../security/crypto.js';
 import { claimUsername } from '../modules/users/users.service.js';
 import { hashPassword } from '../security/password.js';
+import type { SupportedLocale } from '../utils/locales.js';
 import {
   detectTaxIdType,
   maskTaxId,
@@ -24,6 +25,11 @@ import {
 } from './demoSeed.constants.js';
 import { assertDemoSeedSafe } from './demoSeed.guard.js';
 import {
+  localizeDemoAccessGroups,
+  localizeDemoMember,
+  resolveDemoSeedLocale,
+} from './demoSeed.locale.js';
+import {
   defaultManifestPath,
   type DemoSeedManifest,
   type DemoSeedManifestAccessGroup,
@@ -32,7 +38,6 @@ import {
   writeDemoSeedManifest,
 } from './demoSeed.manifest.js';
 import { writeDemoSeedReport } from './demoSeed.report.js';
-
 
 function credentialUpdatePayload(passwordHash: string) {
   return process.env.SEED_FORCE_PASSWORD_RESET === 'true' ? { passwordHash } : {};
@@ -43,6 +48,8 @@ export type RunDemoSeedOptions = {
   manifestPath?: string;
   repoRoot?: string;
   resetPending?: boolean;
+  /** Sobrepõe `DEMO_SEED_LOCALE`. */
+  locale?: string;
 };
 
 export type RunDemoSeedResult = {
@@ -96,7 +103,7 @@ async function ensureAccessGroups(
   return manifestGroups;
 }
 
-async function ensureBusinessTenant(company: DemoCompanyDef) {
+async function ensureBusinessTenant(company: DemoCompanyDef, locale: SupportedLocale) {
   const taxId = normalizeTaxId(company.cnpj);
   const taxIdHash = hashLookup(taxId);
 
@@ -106,6 +113,7 @@ async function ensureBusinessTenant(company: DemoCompanyDef) {
       tenantId: company.tenantId,
       tenantType: 'business',
       country: 'BR',
+      defaultLocale: locale,
       displayNameEncrypted: encryptField(company.displayName),
       displayNameLookupHash: hashLookup(company.displayName.toLowerCase()),
       slug: company.slug,
@@ -117,6 +125,7 @@ async function ensureBusinessTenant(company: DemoCompanyDef) {
     update: {
       tenantType: 'business',
       country: 'BR',
+      defaultLocale: locale,
       displayNameEncrypted: encryptField(company.displayName),
       displayNameLookupHash: hashLookup(company.displayName.toLowerCase()),
       slug: company.slug,
@@ -127,8 +136,6 @@ async function ensureBusinessTenant(company: DemoCompanyDef) {
     },
   });
 }
-
-
 
 /**
  * O handle do usuário semeado, e só quando ele ainda não tem um.
@@ -150,13 +157,14 @@ async function ensureSeedUsername(
   await prisma.authUser.update({ where: { id: userId }, data: { username } });
 }
 
-async function ensureDemoCompanyTenant() {
+async function ensureDemoCompanyTenant(locale: SupportedLocale) {
   return prisma.authTenant.upsert({
     where: { tenantId: DEMO_COMPANY_TENANT_ID },
     create: {
       tenantId: DEMO_COMPANY_TENANT_ID,
       tenantType: 'business',
       country: 'BR',
+      defaultLocale: locale,
       displayNameEncrypted: encryptField('DOQYN Dev'),
       displayNameLookupHash: hashLookup('doqyn dev'),
       slug: DEMO_COMPANY_TENANT_ID,
@@ -165,6 +173,7 @@ async function ensureDemoCompanyTenant() {
     update: {
       tenantType: 'business',
       country: 'BR',
+      defaultLocale: locale,
       displayNameEncrypted: encryptField('DOQYN Dev'),
       displayNameLookupHash: hashLookup('doqyn dev'),
       status: 'active',
@@ -173,15 +182,18 @@ async function ensureDemoCompanyTenant() {
 }
 
 async function ensureActiveTenantMember(
-  member: DemoTenantMemberDef,
+  memberDef: DemoTenantMemberDef,
   tenantUuid: string,
   passwordHash: string,
+  locale: SupportedLocale,
 ): Promise<DemoSeedManifestGlobalAdmin> {
+  const member = localizeDemoMember(memberDef, locale);
   const normalizedEmail = normalizeEmail(member.email);
   const emailLookupHash = hashLookup(normalizedEmail);
   const normalizedPhone = normalizePhone(member.whatsapp);
   const displayName = `${member.firstName} ${member.lastName}`.trim();
 
+  // O idioma é regravado a cada passada: rodar o seed em outro idioma troca a demonstração inteira.
   const user = await prisma.authUser.upsert({
     where: { emailLookupHash },
     create: {
@@ -191,6 +203,7 @@ async function ensureActiveTenantMember(
       lastNameEncrypted: encryptField(member.lastName),
       whatsappEncrypted: encryptField(normalizedPhone),
       whatsappLookupHash: hashLookup(normalizedPhone),
+      locale,
       status: 'active',
       emailVerified: true,
     },
@@ -199,6 +212,7 @@ async function ensureActiveTenantMember(
       lastNameEncrypted: encryptField(member.lastName),
       whatsappEncrypted: encryptField(normalizedPhone),
       whatsappLookupHash: hashLookup(normalizedPhone),
+      locale,
       status: 'active',
       emailVerified: true,
     },
@@ -272,35 +286,45 @@ async function ensureCompanyAdmin(
   admin: DemoTenantMemberDef,
   tenantUuid: string,
   passwordHash: string,
+  locale: SupportedLocale,
 ) {
-  return ensureActiveTenantMember(admin, tenantUuid, passwordHash);
+  return ensureActiveTenantMember(admin, tenantUuid, passwordHash, locale);
 }
 
 export async function runDemoSeed(options: RunDemoSeedOptions = {}): Promise<RunDemoSeedResult> {
   assertDemoSeedSafe();
 
+  const locale = resolveDemoSeedLocale(options.locale ?? process.env.DEMO_SEED_LOCALE);
   const repoRoot = options.repoRoot ?? process.cwd();
   const password = options.password ?? process.env.DEMO_SEED_PASSWORD ?? DEMO_SEED_DEFAULT_PASSWORD;
   const passwordHash = await hashPassword(password);
   const manifestPath = options.manifestPath ?? defaultManifestPath(repoRoot);
 
-  const adminTenant = await ensureDemoCompanyTenant();
+  const adminTenant = await ensureDemoCompanyTenant(locale);
   // A chave `globalAdmin` do manifest permanece: é contrato cross-repo lido pelo seed do Alpha
   // (`scripts/demo-seed/`). O que mudou é a conta por trás dela — hoje um admin de empresa comum.
-  const globalAdmin = await ensureCompanyAdmin(DEMO_COMPANY_ADMIN, adminTenant.id, passwordHash);
+  const globalAdmin = await ensureCompanyAdmin(
+    DEMO_COMPANY_ADMIN,
+    adminTenant.id,
+    passwordHash,
+    locale,
+  );
 
   const companyDevActiveUsers: DemoSeedManifestGlobalAdmin[] = [];
   for (const member of DEMO_COMPANY_DEV_ACTIVE_USERS) {
     companyDevActiveUsers.push(
-      await ensureActiveTenantMember(member, adminTenant.id, passwordHash),
+      await ensureActiveTenantMember(member, adminTenant.id, passwordHash, locale),
     );
   }
 
   const companies: DemoSeedManifestCompany[] = [];
 
   for (const company of DEMO_COMPANIES) {
-    const tenant = await ensureBusinessTenant(company);
-    const accessGroups = await ensureAccessGroups(tenant.id, company.accessGroups);
+    const tenant = await ensureBusinessTenant(company, locale);
+    const accessGroups = await ensureAccessGroups(
+      tenant.id,
+      localizeDemoAccessGroups(company.accessGroups, locale),
+    );
 
     companies.push({
       seedKey: company.seedKey,
@@ -319,6 +343,7 @@ export async function runDemoSeed(options: RunDemoSeedOptions = {}): Promise<Run
     version: 1,
     source: DEMO_SEED_SOURCE,
     generatedAt: new Date().toISOString(),
+    locale,
     authServiceRoot: repoRoot,
     companies,
     globalAdmin,

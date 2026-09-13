@@ -18,6 +18,7 @@ import {
   toPublicUser,
   updateUserAvatarMetadata,
   type UpdateUserAvatarMetadataInput,
+  listLocalesByIds,
   listUsernamesByIds,
   searchUsersByUsernamePrefix,
 } from '../users/users.service.js';
@@ -123,6 +124,11 @@ export async function internalSearchUsersByUsername(prefix: string, limit?: numb
  */
 export async function internalListUsernames(ids: string[]) {
   return listUsernamesByIds(ids);
+}
+
+/** O idioma de contas que o app já conhece pelo id, para o e-mail sair na língua de cada uma. */
+export async function internalListUserLocales(ids: string[]) {
+  return listLocalesByIds(ids);
 }
 
 export async function internalVerifySession(sessionToken: string) {

@@ -423,6 +423,28 @@ export async function listUsernamesByIds(
     }));
 }
 
+/**
+ * O idioma de contas que quem chama já conhece pelo id — para o app escrever o e-mail de cada uma
+ * no idioma dela.
+ *
+ * Separado de `listUsernamesByIds` porque aquela descarta quem ainda não tem handle, e todo
+ * destinatário de aviso precisa de idioma, com handle ou sem.
+ */
+export async function listLocalesByIds(
+  ids: string[],
+): Promise<Array<{ id: string; locale: string }>> {
+  const unique = [...new Set(ids.map((id) => id.trim()).filter((id) => UUID_SHAPE.test(id)))].slice(
+    0,
+    200,
+  );
+  if (!unique.length) return [];
+
+  return prisma.authUser.findMany({
+    where: { id: { in: unique } },
+    select: { id: true, locale: true },
+  });
+}
+
 /** O handle está livre? Reservado e formato inválido contam como ocupado para quem escolhe. */
 export async function isUsernameAvailable(username: string): Promise<boolean> {
   const existing = await prisma.authUser.findUnique({ where: { username } });

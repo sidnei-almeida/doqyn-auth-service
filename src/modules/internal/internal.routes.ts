@@ -22,6 +22,7 @@ import {
   internalGetUserOrThrow,
   internalListTenantMembers,
   internalLookupUserByEmail,
+  internalListUserLocales,
   internalListUsernames,
   internalSearchUsersByUsername,
   internalUpdateUserAvatarMetadata,
@@ -125,6 +126,17 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
       : [];
 
     const users = await internalListUsernames(ids);
+    return reply.send({ ok: true, users });
+  });
+
+  /** Idioma por lote — o app pergunta no envio do e-mail, para cada aviso sair na língua de quem lê. */
+  app.post('/internal/users/locales', async (request, reply) => {
+    const body = request.body as { userIds?: unknown };
+    const ids = Array.isArray(body?.userIds)
+      ? body.userIds.filter((id): id is string => typeof id === 'string')
+      : [];
+
+    const users = await internalListUserLocales(ids);
     return reply.send({ ok: true, users });
   });
 

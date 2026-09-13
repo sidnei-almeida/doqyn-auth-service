@@ -135,6 +135,7 @@ export async function createInvite(actor: AdminActor, input: CreateInviteInput, 
           invitedByMembershipId: actor.membership.membershipId,
           firstNameEncrypted: firstName ? encryptField(firstName) : null,
           lastNameEncrypted: lastName ? encryptField(lastName) : null,
+          locale: tenant.defaultLocale,
           status: 'pending',
           acceptedAt: null,
           acceptedByUserId: null,
@@ -160,6 +161,11 @@ export async function createInvite(actor: AdminActor, input: CreateInviteInput, 
           invitedByMembershipId: actor.membership.membershipId,
           tokenHash,
           expiresAt,
+          /**
+           * Quem recebe ainda não tem conta, então o idioma é o da empresa que convida — é a
+           * língua em que ela trabalha, e a do ambiente onde a pessoa vai entrar.
+           */
+          locale: tenant.defaultLocale,
         },
       });
       await tx.authInviteRole.createMany({
@@ -189,6 +195,7 @@ export async function createInvite(actor: AdminActor, input: CreateInviteInput, 
     inviterName,
     inviterEmail,
     expiresInDays: loadEnv().INVITE_TTL_DAYS,
+    locale: tenant.defaultLocale,
   });
 
   await logAuthAudit(

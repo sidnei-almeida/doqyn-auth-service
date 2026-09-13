@@ -178,6 +178,7 @@ export async function sendEmailVerificationCode(
     confirmUrl,
     expiresInMinutes: env.EMAIL_VERIFICATION_CODE_TTL_MINUTES,
     linkExpiresInHours: env.EMAIL_VERIFICATION_TTL_HOURS,
+    locale: user.locale,
   });
 
   const sender = getPlatformSender();

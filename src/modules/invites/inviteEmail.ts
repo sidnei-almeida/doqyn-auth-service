@@ -9,6 +9,8 @@ export type SendInviteEmailInput = {
   inviterName: string;
   inviterEmail: string;
   expiresInDays: number;
+  /** Idioma gravado no convite. */
+  locale?: string | null;
 };
 
 export type SendInviteEmailResult = {
@@ -30,6 +32,7 @@ export async function sendInviteEmail(input: SendInviteEmailInput): Promise<Send
     tenantDisplayName: input.tenantDisplayName,
     inviteUrl,
     expiresInDays: input.expiresInDays,
+    locale: input.locale,
   });
 
   const sender = getPlatformSender();

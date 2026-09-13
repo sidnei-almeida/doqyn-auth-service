@@ -157,6 +157,7 @@ async function issueEmailChange(
     confirmUrl,
     expiresInMinutes: env.EMAIL_CHANGE_CODE_TTL_MINUTES,
     expiresInHours: env.EMAIL_CHANGE_TTL_HOURS,
+    locale: user.locale,
   });
 
   const requesterPublic = toPublicUser(user);

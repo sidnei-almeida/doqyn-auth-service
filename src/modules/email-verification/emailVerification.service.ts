@@ -28,7 +28,7 @@ import { renderEmailVerificationEmail } from '../email/renderEmailVerificationEm
 import { findUserById, toPublicUser } from '../users/users.service.js';
 
 function verificationPath(token: string): string {
-  return `/verificar-email/${encodeURIComponent(token)}`;
+  return `/verify-email/${encodeURIComponent(token)}`;
 }
 
 async function invalidatePendingVerifications(userId: string): Promise<void> {

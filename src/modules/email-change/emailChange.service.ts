@@ -34,7 +34,7 @@ import {
 import type { RequestEmailChangeInput } from './emailChange.schemas.js';
 
 function emailChangePath(token: string): string {
-  return `/confirmar-email/${encodeURIComponent(token)}`;
+  return `/confirm-email-change/${encodeURIComponent(token)}`;
 }
 
 async function invalidatePendingEmailChanges(userId: string): Promise<void> {

@@ -130,7 +130,7 @@ describe('email verification', () => {
     const ticket = issueEmailVerificationTicket(user.id);
 
     const confirmUrl = (await send(app, ticket)).json().confirmUrl as string;
-    const token = decodeURIComponent(confirmUrl.split('/verificar-email/')[1]);
+    const token = decodeURIComponent(confirmUrl.split('/verify-email/')[1]);
 
     const confirmed = await app.inject({
       method: 'POST',

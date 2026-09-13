@@ -40,7 +40,7 @@ function normalizeRoles(roles: TenantRole[]): TenantRole[] {
 }
 
 function invitePathForToken(token: string): string {
-  return `/convite/${encodeURIComponent(token)}`;
+  return `/invite/${encodeURIComponent(token)}`;
 }
 
 function buildInviteLink(token: string): string {

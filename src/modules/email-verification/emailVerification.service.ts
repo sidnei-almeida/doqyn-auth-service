@@ -23,7 +23,12 @@ import {
   ValidationError,
 } from '../../utils/errors.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
-import { getPlatformSender, isPlatformEmailConfigured, sendEmail } from '../email/email.service.js';
+import {
+  getPlatformSender,
+  isPlatformEmailConfigured,
+  redactEmailsInText,
+  sendEmail,
+} from '../email/email.service.js';
 import { renderEmailVerificationEmail } from '../email/renderEmailVerificationEmail.js';
 import { findUserById, toPublicUser } from '../users/users.service.js';
 
@@ -198,10 +203,11 @@ export async function sendEmailVerificationCode(
       emailSent = true;
     } catch (error) {
       // Engolido calado, a recusa da Resend (domínio não verificado, remetente inválido) só
-      // aparecia como "não chegou o código". O motivo vem no erro e não carrega o conteúdo.
+      // aparecia como "não chegou o código". O corpo do erro pode repetir o destinatário, então
+      // o endereço sai mascarado.
       console.error(
         'Envio do código de verificação falhou:',
-        error instanceof Error ? error.message : error,
+        redactEmailsInText(error instanceof Error ? error.message : String(error)),
       );
       emailSent = false;
     }

@@ -25,6 +25,11 @@ function redactEmail(email: string): string {
   return `${visible}***@${domain}`;
 }
 
+/** Mascara todo endereço dentro de um texto livre, como a mensagem de erro de um provedor. */
+export function redactEmailsInText(text: string): string {
+  return text.replace(/[^\s@"'<>(),;:]+@[^\s@"'<>(),;:]+/g, redactEmail);
+}
+
 let cachedSender: EmailSender | null = null;
 
 export function getEmailSender(): EmailSender {

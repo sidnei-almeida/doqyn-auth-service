@@ -6,6 +6,11 @@ import { TEST_ENV } from './setup.js';
 import { hashLookup } from '../src/security/crypto.js';
 import { normalizeTaxId } from '../src/utils/normalize.js';
 import { DOQYN_TERMS_VERSION } from '../src/modules/terms/terms.constants.js';
+import {
+  individualTaxIdConflict,
+  isUniqueViolationOn,
+  toSignupConflict,
+} from '../src/modules/signups/signupConflicts.js';
 
 const mockFetch = vi.fn();
 
@@ -113,6 +118,48 @@ describe('individual signups', () => {
     });
 
     expect(homonimo.statusCode).toBe(200);
+  });
+
+  it('dois envios simultâneos com o mesmo CPF criam um cadastro só', async () => {
+    const [a, b] = await Promise.all([
+      app.inject({
+        method: 'POST',
+        url: '/auth/individual-signups',
+        payload: { ...payload, email: 'corrida-a@example.com' },
+      }),
+      app.inject({
+        method: 'POST',
+        url: '/auth/individual-signups',
+        payload: { ...payload, email: 'corrida-b@example.com' },
+      }),
+    ]);
+
+    expect([a.statusCode, b.statusCode].sort()).toEqual([200, 409]);
+    const taxIdHash = hashLookup(normalizeTaxId(payload.taxId));
+    expect(await prisma.authTenant.count({ where: { taxIdHash } })).toBe(1);
+  });
+
+  it('banco recusa segundo tenant vivo com o mesmo documento, e o erro vira 409', async () => {
+    const base = {
+      tenantType: 'individual' as const,
+      country: 'BR',
+      taxIdHash: 'hash-indice-unico',
+      status: 'active' as const,
+    };
+    await prisma.authTenant.create({ data: { ...base, tenantId: 'individual_indice_a' } });
+
+    const duplicate = await prisma.authTenant
+      .create({ data: { ...base, tenantId: 'individual_indice_b', country: null } })
+      .catch((error: unknown) => error);
+    expect(isUniqueViolationOn(duplicate, 'tax_id_hash')).toBe(true);
+    expect(toSignupConflict(duplicate, () => individualTaxIdConflict('BR'))).toMatchObject({
+      code: 'CPF_ALREADY_EXISTS',
+    });
+
+    // Bloqueado não reserva o documento.
+    await prisma.authTenant.create({
+      data: { ...base, tenantId: 'individual_indice_c', status: 'blocked' },
+    });
   });
 
   it('falha de provisionamento mantém tenant provisioning_failed', async () => {

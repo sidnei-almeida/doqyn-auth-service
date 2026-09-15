@@ -310,6 +310,9 @@ model AuthTenant {
   termsAcceptances AuthTermsAcceptance[]
   invites          AuthInvite[]
 
+  /// Existe também o índice único parcial `auth_tenants_tax_id_hash_country_live_key`
+  /// (migração 20260915090000): um tenant vivo por documento fiscal e país. O schema não o
+  /// descreve; se `prisma migrate dev` gerar DROP dele, apague essa linha da migração gerada.
   @@index([taxIdHash])
   @@index([status])
   @@index([country])

@@ -3,7 +3,7 @@ import type { CountryCode } from 'libphonenumber-js/min';
 import { prisma } from '../../db/prisma.js';
 import { encryptField, hashLookup } from '../../security/crypto.js';
 import { hashPassword, validatePasswordStrength } from '../../security/password.js';
-import { ConflictError, ValidationError } from '../../utils/errors.js';
+import { ValidationError } from '../../utils/errors.js';
 import { assertSignupEmailDeliverable } from '../email-verification/emailVerification.guard.js';
 import {
   maskTaxId,
@@ -19,6 +19,11 @@ import type {
   IndividualSignupAttachInput,
   IndividualSignupInput,
 } from './individualSignups.schemas.js';
+import {
+  emailConflict,
+  individualTaxIdConflict,
+  toSignupConflict,
+} from '../signups/signupConflicts.js';
 import {
   assertUserCanAttachTenant,
   finalizeSignupProvisioning,
@@ -98,21 +103,13 @@ export async function submitIndividualSignup(
       existingTenant.status,
     )
   ) {
-    throw input.country === 'BR'
-      ? new ConflictError('Já existe um cadastro com este CPF.', 'CPF_ALREADY_EXISTS')
-      : new ConflictError(
-          'Já existe um cadastro com este documento fiscal.',
-          'TAX_ID_ALREADY_EXISTS',
-        );
+    throw individualTaxIdConflict(input.country);
   }
 
   if (emailLookupHash) {
     const existingUser = await prisma.authUser.findUnique({ where: { emailLookupHash } });
     if (existingUser) {
-      throw new ConflictError(
-        'Este e-mail já está em uso. Faça login ou use outro e-mail.',
-        'EMAIL_ALREADY_EXISTS',
-      );
+      throw emailConflict();
     }
   } else {
     await assertUserCanAttachTenant(attachToUserId!);
@@ -203,6 +200,8 @@ export async function submitIndividualSignup(
     );
 
     return { user, tenant, membership };
+  }).catch((error: unknown) => {
+    throw toSignupConflict(error, () => individualTaxIdConflict(input.country));
   });
 
   await logSignupCreatedAudits('individual_signup', {

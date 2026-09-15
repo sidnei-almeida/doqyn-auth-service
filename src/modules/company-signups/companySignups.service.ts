@@ -2,7 +2,7 @@ import type { CountryCode } from 'libphonenumber-js/min';
 import { prisma } from '../../db/prisma.js';
 import { encryptField, hashLookup } from '../../security/crypto.js';
 import { hashPassword, validatePasswordStrength } from '../../security/password.js';
-import { ConflictError, ValidationError } from '../../utils/errors.js';
+import { ValidationError } from '../../utils/errors.js';
 import { assertSignupEmailDeliverable } from '../email-verification/emailVerification.guard.js';
 import {
   maskTaxId,
@@ -22,6 +22,11 @@ import {
   finalizeSignupProvisioning,
   logSignupCreatedAudits,
 } from '../signups/signupOrchestrator.js';
+import {
+  companyTaxIdConflict,
+  emailConflict,
+  toSignupConflict,
+} from '../signups/signupConflicts.js';
 
 const PROVISIONING_FAILURE_MESSAGE =
   'Sua empresa foi cadastrada, mas ainda estamos preparando o ambiente. Tente novamente em alguns minutos ou fale com o suporte.';
@@ -85,19 +90,13 @@ export async function submitCompanySignup(
       existingTenant.status,
     )
   ) {
-    throw new ConflictError(
-      'Já existe uma empresa cadastrada com este documento fiscal.',
-      'COMPANY_ALREADY_EXISTS',
-    );
+    throw companyTaxIdConflict();
   }
 
   if (emailLookupHash) {
     const existingUser = await prisma.authUser.findUnique({ where: { emailLookupHash } });
     if (existingUser) {
-      throw new ConflictError(
-        'Este e-mail já está em uso. Faça login ou use outro e-mail.',
-        'EMAIL_ALREADY_EXISTS',
-      );
+      throw emailConflict();
     }
   } else {
     await assertUserCanAttachTenant(attachToUserId!);
@@ -196,6 +195,8 @@ export async function submitCompanySignup(
     );
 
     return { user, tenant, membership };
+  }).catch((error: unknown) => {
+    throw toSignupConflict(error, companyTaxIdConflict);
   });
 
   await logSignupCreatedAudits('company_signup', {

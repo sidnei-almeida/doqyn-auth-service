@@ -10,6 +10,7 @@ import {
   parseDatabaseUrl,
 } from './db/databaseHealth.js';
 import { prisma } from './db/prisma.js';
+import { TRUSTED_PROXY_HOPS } from './security/requestContext.js';
 import { authRoutes, registerErrorHandler } from './modules/auth/auth.routes.js';
 import { adminRoutes } from './modules/admin/admin.routes.js';
 import { accountRoutes } from './modules/account/account.routes.js';
@@ -21,7 +22,7 @@ export async function buildApp() {
   const env = loadEnv();
   const app = Fastify({
     logger: env.NODE_ENV === 'development',
-    trustProxy: true,
+    trustProxy: TRUSTED_PROXY_HOPS,
   });
 
   // Aceita corpo JSON vazio ({}) ou ausente quando Content-Type é application/json.

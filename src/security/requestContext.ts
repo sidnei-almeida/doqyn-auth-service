@@ -8,12 +8,18 @@ export interface RequestContext {
   userAgentHash: string;
 }
 
+/**
+ * Quantos proxies à frente do serviço são nossos: só o nginx.
+ *
+ * Com `trustProxy: true` o Fastify confiava na cadeia inteira do `X-Forwarded-For`, e o valor mais à
+ * esquerda é o que o cliente mandou — o nginx acrescenta o endereço real no fim. Um header inventado
+ * por requisição trocava o `ipHash` e zerava todo limite por IP (login, cadastro, reset, verificação).
+ * Com um salto só, `request.ip` é a última entrada, a que o nginx escreveu.
+ */
+export const TRUSTED_PROXY_HOPS = 1;
+
 export function extractRequestContext(request: FastifyRequest): RequestContext {
-  const forwarded = request.headers['x-forwarded-for'];
-  const ip =
-    (typeof forwarded === 'string' ? forwarded.split(',')[0]?.trim() : undefined) ||
-    request.ip ||
-    '127.0.0.1';
+  const ip = request.ip || '127.0.0.1';
   const userAgent = (request.headers['user-agent'] as string) || 'unknown';
 
   return {

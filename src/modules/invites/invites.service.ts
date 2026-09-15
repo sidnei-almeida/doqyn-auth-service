@@ -1,4 +1,4 @@
-import type { InviteStatus, TenantRole } from '@prisma/client';
+import { Prisma, type InviteStatus, type TenantRole } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { getPublicAppBaseUrl, isProduction, loadEnv, type Env } from '../../config/env.js';
 import { decryptField, encryptField, hashInviteToken, hashLookup } from '../../security/crypto.js';
@@ -145,7 +145,9 @@ export async function createInvite(actor: AdminActor, input: CreateInviteInput, 
   let inviteId: string;
   if (existingPending) {
     const updated = await prisma.$transaction(async (tx) => {
-      await tx.authInviteRole.deleteMany({ where: { inviteId: existingPending.id } });
+      // O UPDATE vem antes de mexer nos papéis porque trava a linha do convite até o commit. Na
+      // ordem inversa, dois reenvios simultâneos apagavam os papéis juntos e os dois recriavam,
+      // batendo no único (invite_id, role).
       const invite = await tx.authInvite.update({
         where: { id: existingPending.id },
         data: {
@@ -162,6 +164,7 @@ export async function createInvite(actor: AdminActor, input: CreateInviteInput, 
           acceptedMembershipId: null,
         },
       });
+      await tx.authInviteRole.deleteMany({ where: { inviteId: invite.id } });
       await tx.authInviteRole.createMany({
         data: roles.map((role) => ({ inviteId: invite.id, role })),
       });
@@ -169,30 +172,52 @@ export async function createInvite(actor: AdminActor, input: CreateInviteInput, 
     });
     inviteId = updated.id;
   } else {
-    const created = await prisma.$transaction(async (tx) => {
-      const invite = await tx.authInvite.create({
-        data: {
-          tenantId: tenant.id,
-          emailEncrypted: encryptField(email),
-          emailLookupHash,
-          firstNameEncrypted: firstName ? encryptField(firstName) : null,
-          lastNameEncrypted: lastName ? encryptField(lastName) : null,
-          invitedByUserId: actor.userId,
-          invitedByMembershipId: actor.membership.membershipId,
-          tokenHash,
-          expiresAt,
-          /**
-           * Quem recebe ainda não tem conta, então o idioma é o da empresa que convida — é a
-           * língua em que ela trabalha, e a do ambiente onde a pessoa vai entrar.
-           */
-          locale: tenant.defaultLocale,
-        },
+    const created = await prisma
+      .$transaction(async (tx) => {
+        // Pendente vencido ainda ocupa o índice único de convite pendente: sai do caminho antes.
+        await tx.authInvite.updateMany({
+          where: {
+            tenantId: tenant.id,
+            emailLookupHash,
+            status: 'pending',
+            expiresAt: { lte: new Date() },
+          },
+          data: { status: 'expired' },
+        });
+        const invite = await tx.authInvite.create({
+          data: {
+            tenantId: tenant.id,
+            emailEncrypted: encryptField(email),
+            emailLookupHash,
+            firstNameEncrypted: firstName ? encryptField(firstName) : null,
+            lastNameEncrypted: lastName ? encryptField(lastName) : null,
+            invitedByUserId: actor.userId,
+            invitedByMembershipId: actor.membership.membershipId,
+            tokenHash,
+            expiresAt,
+            /**
+             * Quem recebe ainda não tem conta, então o idioma é o da empresa que convida — é a
+             * língua em que ela trabalha, e a do ambiente onde a pessoa vai entrar.
+             */
+            locale: tenant.defaultLocale,
+          },
+        });
+        await tx.authInviteRole.createMany({
+          data: roles.map((role) => ({ inviteId: invite.id, role })),
+        });
+        return invite;
+      })
+      .catch((error: unknown) => {
+        // Outro pedido criou o pendente entre a busca e a gravação (clique duplo, retry). O índice
+        // `auth_invites_tenant_email_pending_key` recusou a segunda linha.
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          throw new ConflictError(
+            'Já existe um convite sendo criado para este e-mail. Atualize a lista.',
+            'INVITE_ALREADY_PENDING',
+          );
+        }
+        throw error;
       });
-      await tx.authInviteRole.createMany({
-        data: roles.map((role) => ({ inviteId: invite.id, role })),
-      });
-      return invite;
-    });
     inviteId = created.id;
   }
 

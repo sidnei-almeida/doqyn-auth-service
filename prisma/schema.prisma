@@ -514,6 +514,9 @@ model AuthInvite {
   acceptedByUser AuthUser?        @relation("InviteAcceptedByUser", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
   roles          AuthInviteRole[]
 
+  /// Além destes, `auth_invites_tenant_email_pending_key` — único parcial em (tenant_id,
+  /// email_lookup_hash) WHERE status = 'pending', criado à mão em `20260915160100_convite_pendente_unico`.
+  /// O Prisma não o descreve; se `prisma migrate dev` gerar DROP dele, apague essa linha da migração.
   @@index([tenantId, emailLookupHash, status])
   @@index([tenantId, status])
   @@index([expiresAt])

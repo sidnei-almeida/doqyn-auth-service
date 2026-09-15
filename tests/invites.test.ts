@@ -28,12 +28,9 @@ function buildAcceptPayload(overrides?: Record<string, unknown>) {
 }
 
 async function loginAsAdmin(app: FastifyInstance): Promise<string> {
-  const { membership } = await setupAdminUser(
-    'admin@invite.test',
-    'admin-pass-123',
-    tenantId,
-    ['company_admin'],
-  );
+  const { membership } = await setupAdminUser('admin@invite.test', 'admin-pass-123', tenantId, [
+    'company_admin',
+  ]);
   const { token } = await loginUser(app, 'admin@invite.test', 'admin-pass-123', cookieName);
   await app.inject({
     method: 'POST',
@@ -248,6 +245,39 @@ describe('member invites', () => {
     });
     expect(preview.statusCode).toBe(410);
     expect(preview.json().code).toBe('INVITE_REVOKED');
+  });
+
+  it('pedidos simultâneos para o mesmo e-mail deixam um convite pendente só', async () => {
+    const adminCookie = await loginAsAdmin(app);
+    const responses = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        app.inject({
+          method: 'POST',
+          url: '/auth/invites',
+          headers: { cookie: adminCookie },
+          payload: { email: 'cliqueduplo@invite.test', roles: ['user'] },
+        }),
+      ),
+    );
+
+    for (const response of responses) {
+      expect([201, 409]).toContain(response.statusCode);
+    }
+    const pending = await prisma.authInvite.count({
+      where: { status: 'pending', emailLookupHash: { not: '' } },
+    });
+    expect(pending).toBe(1);
+  });
+
+  it('convite pendente vencido não impede convidar de novo', async () => {
+    const adminCookie = await loginAsAdmin(app);
+    const { inviteToken } = await createInvite(app, adminCookie, 'vencido@invite.test');
+    await prisma.authInvite.update({
+      where: { tokenHash: hashInviteToken(inviteToken) },
+      data: { expiresAt: new Date(Date.now() - 60_000) },
+    });
+
+    await createInvite(app, adminCookie, 'vencido@invite.test');
   });
 
   it('convite expirado retorna 410', async () => {

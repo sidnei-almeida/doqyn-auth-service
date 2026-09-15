@@ -1,5 +1,8 @@
 import { loadEnv } from '../config/env.js';
 
+/** Prazo das chamadas síncronas ao app principal (provisão e sync de membro). */
+export const APP_INTEGRATION_TIMEOUT_MS = 10_000;
+
 export interface ProvisionTenantPayload {
   tenantId: string;
   tenantType: 'business' | 'individual';
@@ -42,6 +45,8 @@ export async function provisionTenantInMainApp(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
+      // O cadastro espera por esta chamada; sem prazo, um app travado segurava a requisição aberta.
+      signal: AbortSignal.timeout(APP_INTEGRATION_TIMEOUT_MS),
     });
 
     const data = (await response.json().catch(() => ({}))) as {

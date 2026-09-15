@@ -66,14 +66,39 @@ export async function exchangeGoogleCode(input: {
     code_verifier: input.codeVerifier,
   });
 
-  const response = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  return postTokenEndpoint(
+    'https://oauth2.googleapis.com/token',
     body,
-  });
+    'GOOGLE_TOKEN_EXCHANGE_FAILED',
+  );
+}
+
+/** A volta do provedor espera por esta chamada: sem prazo, um endpoint lento prendia o login. */
+const TOKEN_EXCHANGE_TIMEOUT_MS = 10_000;
+
+/**
+ * Troca o código pelo token. Falha de rede sai com o mesmo código de domínio da resposta não-ok,
+ * e não como `TypeError` do fetch — o callback só sabe traduzir o primeiro para o usuário.
+ */
+async function postTokenEndpoint(
+  url: string,
+  body: URLSearchParams,
+  failureCode: 'GOOGLE_TOKEN_EXCHANGE_FAILED' | 'MICROSOFT_TOKEN_EXCHANGE_FAILED',
+): Promise<TokenExchangeResponse> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+      signal: AbortSignal.timeout(TOKEN_EXCHANGE_TIMEOUT_MS),
+    });
+  } catch (error) {
+    throw new Error(failureCode, { cause: error });
+  }
 
   if (!response.ok) {
-    throw new Error('GOOGLE_TOKEN_EXCHANGE_FAILED');
+    throw new Error(failureCode);
   }
 
   return (await response.json()) as TokenExchangeResponse;
@@ -93,20 +118,11 @@ export async function exchangeMicrosoftCode(input: {
     code_verifier: input.codeVerifier,
   });
 
-  const response = await fetch(
+  return postTokenEndpoint(
     `https://login.microsoftonline.com/${config.tenant}/oauth2/v2.0/token`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body,
-    },
+    body,
+    'MICROSOFT_TOKEN_EXCHANGE_FAILED',
   );
-
-  if (!response.ok) {
-    throw new Error('MICROSOFT_TOKEN_EXCHANGE_FAILED');
-  }
-
-  return (await response.json()) as TokenExchangeResponse;
 }
 
 const googleJwks = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));

@@ -165,6 +165,29 @@ describe('email verification', () => {
     expect(updated?.emailVerified).toBe(false);
   });
 
+  it('palpites simultâneos não passam do teto de tentativas', async () => {
+    resetRateLimitStore();
+    const user = await createUnverifiedUser('rajada@ev.test', 'tenant_ev_burst');
+    const ticket = issueEmailVerificationTicket(user.id);
+
+    const code = (await send(app, ticket)).json().code as string;
+    const max = Number(process.env.EMAIL_VERIFICATION_MAX_ATTEMPTS ?? 5);
+    const guesses = Array.from({ length: max * 3 }, (_, i) =>
+      String(i).padStart(6, '0') === code ? '999999' : String(i).padStart(6, '0'),
+    );
+
+    const responses = await Promise.all(guesses.map((guess) => confirm(app, ticket, guess)));
+    const compared = responses.filter(
+      (response) => response.json().code === 'EMAIL_VERIFICATION_INVALID_CODE',
+    );
+    expect(compared.length).toBeLessThanOrEqual(max);
+
+    const pending = await prisma.authEmailVerification.findFirst({
+      where: { userId: user.id, usedAt: null },
+    });
+    expect(pending?.attempts).toBe(max);
+  });
+
   it('recusa reenvio antes do intervalo mínimo', async () => {
     resetRateLimitStore();
     const user = await createUnverifiedUser('reenvio@ev.test', 'tenant_ev_resend');

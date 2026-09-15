@@ -279,7 +279,15 @@ export async function confirmEmailVerificationCode(userId: string, code: string,
   }
 
   const env = loadEnv();
-  if (pending.attempts >= env.EMAIL_VERIFICATION_MAX_ATTEMPTS) {
+
+  // A tentativa é reservada ANTES da comparação, num UPDATE condicional ao teto. Conferir o teto
+  // numa leitura e incrementar depois deixava N palpites simultâneos passarem todos pela checagem,
+  // cada um lendo o contador de antes. Persiste: reiniciar o processo não devolve palpites.
+  const reserved = await prisma.authEmailVerification.updateMany({
+    where: { id: pending.id, attempts: { lt: env.EMAIL_VERIFICATION_MAX_ATTEMPTS } },
+    data: { attempts: { increment: 1 } },
+  });
+  if (reserved.count === 0) {
     throw new GoneError(
       'Código bloqueado por excesso de tentativas. Peça um novo.',
       'EMAIL_VERIFICATION_TOO_MANY_ATTEMPTS',
@@ -287,11 +295,8 @@ export async function confirmEmailVerificationCode(userId: string, code: string,
   }
 
   if (!hashesMatch(pending.codeHash, hashEmailVerificationCode(userId, code))) {
-    // A tentativa é contada antes de qualquer resposta, e persiste: reiniciar o processo não
-    // devolve palpites a quem está adivinhando.
-    const updated = await prisma.authEmailVerification.update({
+    const updated = await prisma.authEmailVerification.findUniqueOrThrow({
       where: { id: pending.id },
-      data: { attempts: { increment: 1 } },
       select: { attempts: true },
     });
     const attemptsLeft = Math.max(0, env.EMAIL_VERIFICATION_MAX_ATTEMPTS - updated.attempts);

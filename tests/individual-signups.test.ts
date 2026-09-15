@@ -103,6 +103,18 @@ describe('individual signups', () => {
     expect(dup.json().code).toBe('CPF_ALREADY_EXISTS');
   });
 
+  it('mesmo nome com outro CPF e e-mail cria segundo cadastro', async () => {
+    await app.inject({ method: 'POST', url: '/auth/individual-signups', payload });
+
+    const homonimo = await app.inject({
+      method: 'POST',
+      url: '/auth/individual-signups',
+      payload: { ...payload, email: 'outra-maria@example.com', taxId: '11144477735' },
+    });
+
+    expect(homonimo.statusCode).toBe(200);
+  });
+
   it('falha de provisionamento mantém tenant provisioning_failed', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,

@@ -9,7 +9,6 @@ import {
   normalizeEmail,
   normalizePhone,
   normalizeTaxId,
-  slugify,
 } from '../../utils/normalize.js';
 import { generateBusinessTenantId } from '../../utils/tenantId.js';
 import { recordTermsAcceptance } from '../terms/termsAcceptance.service.js';
@@ -153,7 +152,8 @@ export async function submitCompanySignup(
         tenantType: 'business',
         displayNameEncrypted: encryptField(displayName),
         displayNameLookupHash: hashLookup(displayName.toLowerCase()),
-        slug: slugify(input.companyName),
+        // Razão social repete (filiais, homônimas): slug derivado dela batia na constraint.
+        slug: tenantTextId,
         country: input.country,
         taxIdType: input.taxIdType,
         taxIdMasked: maskTaxId(taxId),

@@ -10,7 +10,6 @@ import {
   normalizeEmail,
   normalizePhone,
   normalizeTaxId,
-  slugify,
 } from '../../utils/normalize.js';
 import { generateIndividualTenantId } from '../../utils/tenantId.js';
 import { recordTermsAcceptance } from '../terms/termsAcceptance.service.js';
@@ -159,7 +158,9 @@ export async function submitIndividualSignup(
         tenantType: 'individual',
         displayNameEncrypted: encryptField(displayName),
         displayNameLookupHash: hashLookup(displayName.toLowerCase()),
-        slug: slugify(displayName),
+        // O nome não é único: derivar o slug dele fazia o segundo "Maria Silva" bater na
+        // constraint e virar 500. O tenantId já carrega sufixo aleatório.
+        slug: tenantTextId,
         country: input.country,
         taxIdType: input.taxIdType,
         taxIdMasked: maskTaxId(taxId),

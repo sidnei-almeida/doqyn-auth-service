@@ -9,7 +9,6 @@ export type DemoSeedManifestAccessGroup = {
   name: string;
 };
 
-
 export type DemoSeedManifestCompany = {
   seedKey: string;
   tenantId: string;
@@ -39,6 +38,8 @@ export type DemoSeedManifest = {
   version: typeof DEMO_MANIFEST_VERSION;
   source: 'dev_seed_demo';
   generatedAt: string;
+  /** Idioma do seed (`DEMO_SEED_LOCALE`); o seed do Alpha semeia a governança nele. */
+  locale: string;
   authServiceRoot: string;
   companies: DemoSeedManifestCompany[];
   globalAdmin: DemoSeedManifestGlobalAdmin;

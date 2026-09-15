@@ -38,6 +38,15 @@ export const publicUserSchema = z.object({
    */
   username: z.string().nullable().optional(),
   usernameDiscoverable: z.boolean().optional(),
+  /**
+   * Idioma da interface e fuso, em BCP-47 e IANA.
+   *
+   * Saem daqui porque quem os consome não é só a tela: o `doqyn-alpha` lê os dois na
+   * verificação de sessão para renderizar e-mail e notificação na língua certa de cada
+   * destinatário, sem navegador nenhum por perto.
+   */
+  locale: z.string().optional(),
+  timeZone: z.string().nullable().optional(),
 });
 
 export type PublicUser = z.infer<typeof publicUserSchema>;

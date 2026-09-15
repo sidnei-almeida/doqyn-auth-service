@@ -1,11 +1,14 @@
 import type { Prisma, TermsAcceptanceFlow } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
+import { DEFAULT_LOCALE, normalizeLocale } from '../../utils/locales.js';
 
 type PrismaTransaction = Prisma.TransactionClient;
 
 type RecordTermsAcceptanceInput = {
   flow: TermsAcceptanceFlow;
   termsVersion: string;
+  /** Idioma do texto aceito; fora da lista, cai no padrão. */
+  locale?: string | null;
   privacyVersion?: string | null;
   userId?: string | null;
   membershipId?: string | null;
@@ -25,6 +28,7 @@ export async function recordTermsAcceptance(
     data: {
       flow: input.flow,
       termsVersion: input.termsVersion,
+      locale: normalizeLocale(input.locale) ?? DEFAULT_LOCALE,
       privacyVersion: input.privacyVersion ?? null,
       userId: input.userId ?? null,
       membershipId: input.membershipId ?? null,
@@ -35,4 +39,3 @@ export async function recordTermsAcceptance(
     },
   });
 }
-

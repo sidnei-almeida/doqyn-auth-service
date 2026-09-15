@@ -11,9 +11,14 @@ import {
   deactivateUser,
   requestAccountDeletion,
   revokeUserSessionsAdmin,
+  updateOwnPreferences,
   updateOwnProfile,
 } from './account.service.js';
-import { updateDirectoryVisibilitySchema, updateOwnProfileSchema } from './account.schemas.js';
+import {
+  updateDirectoryVisibilitySchema,
+  updateOwnProfileSchema,
+  updatePreferencesSchema,
+} from './account.schemas.js';
 import { setUsernameDiscoverable } from '../users/users.service.js';
 
 export async function accountRoutes(app: FastifyInstance): Promise<void> {
@@ -44,6 +49,21 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
    * diretório sem ter dito que queria. O handle continua existindo em qualquer caso — ele é a
    * identidade de quem já a encontrou antes.
    */
+  /**
+   * Idioma e fuso da conta.
+   *
+   * Separado de `/profile` porque são coisas diferentes: nome é quem a pessoa é, preferência é
+   * como ela quer ser atendida. Juntar os dois obrigaria a tela de idioma a mandar o nome de
+   * volta a cada troca, e uma corrida entre as duas telas sobrescreveria o campo errado.
+   */
+  app.patch('/auth/account/preferences', { preHandler: requireSession }, async (request, reply) => {
+    const body = updatePreferencesSchema.parse(request.body ?? {});
+    const ctx = extractRequestContext(request);
+    const authUser = (request as AuthenticatedRequest).authUser!;
+    const user = await updateOwnPreferences(authUser.id, body, ctx);
+    return reply.send({ ok: true, user });
+  });
+
   app.patch(
     '/auth/account/directory-visibility',
     { preHandler: requireSession },

@@ -23,12 +23,17 @@ import {
   ValidationError,
 } from '../../utils/errors.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
-import { getPlatformSender, isPlatformEmailConfigured, sendEmail } from '../email/email.service.js';
+import {
+  getPlatformSender,
+  isPlatformEmailConfigured,
+  redactEmailsInText,
+  sendEmail,
+} from '../email/email.service.js';
 import { renderEmailVerificationEmail } from '../email/renderEmailVerificationEmail.js';
 import { findUserById, toPublicUser } from '../users/users.service.js';
 
 function verificationPath(token: string): string {
-  return `/verificar-email/${encodeURIComponent(token)}`;
+  return `/verify-email/${encodeURIComponent(token)}`;
 }
 
 async function invalidatePendingVerifications(userId: string): Promise<void> {
@@ -178,6 +183,7 @@ export async function sendEmailVerificationCode(
     confirmUrl,
     expiresInMinutes: env.EMAIL_VERIFICATION_CODE_TTL_MINUTES,
     linkExpiresInHours: env.EMAIL_VERIFICATION_TTL_HOURS,
+    locale: user.locale,
   });
 
   const sender = getPlatformSender();
@@ -195,7 +201,14 @@ export async function sendEmailVerificationCode(
     try {
       await sendEmail(message);
       emailSent = true;
-    } catch {
+    } catch (error) {
+      // Engolido calado, a recusa da Resend (domínio não verificado, remetente inválido) só
+      // aparecia como "não chegou o código". O corpo do erro pode repetir o destinatário, então
+      // o endereço sai mascarado.
+      console.error(
+        'Envio do código de verificação falhou:',
+        redactEmailsInText(error instanceof Error ? error.message : String(error)),
+      );
       emailSent = false;
     }
   } else {

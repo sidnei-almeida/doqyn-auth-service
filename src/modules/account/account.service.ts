@@ -38,6 +38,48 @@ export async function requestAccountDeletion(
  * Perfil da própria pessoa: nome e sobrenome. E-mail tem fluxo próprio, com confirmação,
  * e papéis são decisão de quem administra — nada disso passa por aqui.
  */
+/**
+ * Grava idioma e fuso da conta.
+ *
+ * Fica no auth-service, e não no alpha, porque é a identidade que responde "em que língua
+ * falar com esta pessoa" — e quem precisa da resposta com mais frequência é o servidor
+ * renderizando e-mail para vários destinatários de uma vez.
+ *
+ * Entra na trilha de auditoria como qualquer outra mudança de conta: trocar o idioma muda o
+ * que a pessoa recebe, e uma reclamação de "meu e-mail veio em inglês" precisa ter onde ser
+ * conferida.
+ */
+export async function updateOwnPreferences(
+  userId: string,
+  input: { locale?: string; timeZone?: string | null },
+  ctx?: { ipHash?: string; userAgentHash?: string },
+): Promise<PublicUser> {
+  const user = await findUserById(userId);
+  if (!user) {
+    throw new NotFoundError('Usuário não encontrado.');
+  }
+
+  const updated = await prisma.authUser.update({
+    where: { id: userId },
+    data: {
+      ...(input.locale !== undefined ? { locale: input.locale } : {}),
+      ...(input.timeZone !== undefined ? { timeZone: input.timeZone } : {}),
+    },
+  });
+
+  await logAuthAudit('account.preferences_updated', {
+    userId,
+    ipHash: ctx?.ipHash,
+    userAgentHash: ctx?.userAgentHash,
+    metadata: {
+      ...(input.locale !== undefined ? { locale: input.locale } : {}),
+      ...(input.timeZone !== undefined ? { timeZone: input.timeZone } : {}),
+    },
+  });
+
+  return toPublicUser(updated);
+}
+
 export async function updateOwnProfile(
   userId: string,
   input: { firstName: string; lastName: string },

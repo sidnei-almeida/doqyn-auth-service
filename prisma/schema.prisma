@@ -64,13 +64,13 @@ enum TermsAcceptanceFlow {
 }
 
 model AuthUser {
-  id                 String         @id @default(uuid()) @db.Uuid
-  emailEncrypted     String         @map("email_encrypted")
-  emailLookupHash    String         @unique @map("email_lookup_hash")
-  firstNameEncrypted String?        @map("first_name_encrypted")
-  lastNameEncrypted  String?        @map("last_name_encrypted")
-  whatsappEncrypted  String?        @map("whatsapp_encrypted")
-  whatsappLookupHash String?        @map("whatsapp_lookup_hash")
+  id                    String         @id @default(uuid()) @db.Uuid
+  emailEncrypted        String         @map("email_encrypted")
+  emailLookupHash       String         @unique @map("email_lookup_hash")
+  firstNameEncrypted    String?        @map("first_name_encrypted")
+  lastNameEncrypted     String?        @map("last_name_encrypted")
+  whatsappEncrypted     String?        @map("whatsapp_encrypted")
+  whatsappLookupHash    String?        @map("whatsapp_lookup_hash")
   /// O apelido público, e a única coluna de identidade em texto claro.
   ///
   /// Existe porque o nome é guardado cifrado e o e-mail só tem hash determinístico: nenhum dos
@@ -84,26 +84,40 @@ model AuthUser {
   /// `20260827160000_add_username` — o Prisma não sabe declarar classe de operador. Um
   /// `@@index` aqui gera um btree comum e faz o `migrate dev` propor derrubar o de prefixo,
   /// desotimizando o `LIKE 'x%'` em que a feature inteira se apoia.
-  username           String?        @unique @map("username")
+  username              String?        @unique @map("username")
   /// Se o handle aparece na busca entre empresas.
   ///
   /// Separado do handle de propósito: todo mundo precisa de um identificador estável, nem todo
   /// mundo quer ser encontrado. Sem esta coluna, dar handle a alguém seria inscrevê-lo num
   /// diretório sem perguntar.
-  usernameDiscoverable Boolean      @default(true) @map("username_discoverable")
-  status             AuthUserStatus @default(active)
-  emailVerified      Boolean        @default(false) @map("email_verified")
-  lastLoginAt        DateTime?      @map("last_login_at")
-  anonymizedAt       DateTime?      @map("anonymized_at")
-  avatarStorageProvider String?     @map("avatar_storage_provider")
-  avatarObjectKey       String?     @map("avatar_object_key")
-  avatarContentType     String?     @map("avatar_content_type")
-  avatarVersion         Int         @default(0) @map("avatar_version")
-  avatarUpdatedAt       DateTime?   @map("avatar_updated_at")
-  avatarSize            Int?        @map("avatar_size")
-  avatarStatus          String?     @map("avatar_status")
-  createdAt          DateTime       @default(now()) @map("created_at")
-  updatedAt          DateTime       @updatedAt @map("updated_at")
+  usernameDiscoverable  Boolean        @default(true) @map("username_discoverable")
+  status                AuthUserStatus @default(active)
+  emailVerified         Boolean        @default(false) @map("email_verified")
+  /// Idioma da interface, em BCP-47 (`pt-BR`, `en-US`, `es-419`).
+  ///
+  /// Mora aqui, e não no navegador, porque o servidor precisa dele: e-mail, notificação e PDF
+  /// de assinatura são renderizados sem browser nenhum por perto. Guardado só no cliente, o
+  /// app falaria inglês na tela e português na caixa de entrada da mesma pessoa.
+  ///
+  /// Idioma não é país: quem tem CPF pode preferir ler em inglês e continua tendo CPF. Quem
+  /// decide validação fiscal e formato de telefone é `AuthTenant.country`.
+  locale                String         @default("pt-BR") @db.VarChar(10)
+  /// Fuso IANA (`America/Sao_Paulo`). Nulo = usar o do navegador.
+  ///
+  /// Sem ele, um evento de auditoria muda de dia conforme quem o abre — o que é ruim num
+  /// registro cuja razão de existir é dizer quando algo aconteceu.
+  timeZone              String?        @map("time_zone") @db.VarChar(64)
+  lastLoginAt           DateTime?      @map("last_login_at")
+  anonymizedAt          DateTime?      @map("anonymized_at")
+  avatarStorageProvider String?        @map("avatar_storage_provider")
+  avatarObjectKey       String?        @map("avatar_object_key")
+  avatarContentType     String?        @map("avatar_content_type")
+  avatarVersion         Int            @default(0) @map("avatar_version")
+  avatarUpdatedAt       DateTime?      @map("avatar_updated_at")
+  avatarSize            Int?           @map("avatar_size")
+  avatarStatus          String?        @map("avatar_status")
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
 
   credential         AuthCredential?
   sessions           AuthSession[]
@@ -116,8 +130,8 @@ model AuthUser {
   termsAcceptances   AuthTermsAcceptance[]
   oauthAccounts      AuthOAuthAccount[]
 
-  invitesSent        AuthInvite[]               @relation("InviteInvitedByUser")
-  invitesAccepted    AuthInvite[]               @relation("InviteAcceptedByUser")
+  invitesSent     AuthInvite[] @relation("InviteInvitedByUser")
+  invitesAccepted AuthInvite[] @relation("InviteAcceptedByUser")
 
   @@index([whatsappLookupHash])
   @@index([status])
@@ -179,23 +193,23 @@ model AuthPasswordReset {
 /// é por isso que `attempts` mora na linha e não num contador em memória: reiniciar o processo não
 /// pode devolver tentativas a quem está adivinhando.
 model AuthEmailVerification {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @map("user_id") @db.Uuid
-  codeHash  String    @map("code_hash")
-  tokenHash String    @unique @map("token_hash")
-  attempts  Int       @default(0)
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  codeHash       String    @map("code_hash")
+  tokenHash      String    @unique @map("token_hash")
+  attempts       Int       @default(0)
   /// Prazo do código. Curto, porque seis dígitos são um segredo pequeno.
-  expiresAt DateTime  @map("expires_at")
+  expiresAt      DateTime  @map("expires_at")
   /// Prazo do link, e ele é bem mais longo.
   ///
   /// Dois prazos na mesma linha porque os dois segredos não valem o mesmo: 32 bytes aleatórios
   /// não se adivinham, e quem lê o e-mail horas depois no celular ainda deve conseguir clicar.
   /// Um prazo só forçaria escolher entre um código frouxo e um link inútil.
-  tokenExpiresAt DateTime @map("token_expires_at")
-  usedAt    DateTime? @map("used_at")
+  tokenExpiresAt DateTime  @map("token_expires_at")
+  usedAt         DateTime? @map("used_at")
   /// Quando o e-mail saiu — é daqui que o teto de reenvio se mede.
-  sentAt    DateTime? @map("sent_at")
-  createdAt DateTime  @default(now()) @map("created_at")
+  sentAt         DateTime? @map("sent_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
 
   user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -244,17 +258,17 @@ model AuthLoginAttempt {
 }
 
 model AuthAuditLog {
-  id                  String   @id @default(uuid()) @db.Uuid
-  userId              String?  @map("user_id") @db.Uuid
-  actorMembershipId   String?  @map("actor_membership_id") @db.Uuid
-  targetUserId        String?  @map("target_user_id") @db.Uuid
-  targetMembershipId  String?  @map("target_membership_id") @db.Uuid
-  tenantTextId        String?  @map("tenant_text_id")
-  action              String
-  ipHash              String?  @map("ip_hash")
-  userAgentHash       String?  @map("user_agent_hash")
-  metadata            Json?
-  createdAt           DateTime @default(now()) @map("created_at")
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId             String?  @map("user_id") @db.Uuid
+  actorMembershipId  String?  @map("actor_membership_id") @db.Uuid
+  targetUserId       String?  @map("target_user_id") @db.Uuid
+  targetMembershipId String?  @map("target_membership_id") @db.Uuid
+  tenantTextId       String?  @map("tenant_text_id")
+  action             String
+  ipHash             String?  @map("ip_hash")
+  userAgentHash      String?  @map("user_agent_hash")
+  metadata           Json?
+  createdAt          DateTime @default(now()) @map("created_at")
 
   user AuthUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
@@ -273,8 +287,15 @@ model AuthTenant {
   displayNameEncrypted  String?      @map("display_name_encrypted")
   displayNameLookupHash String?      @map("display_name_lookup_hash")
   slug                  String?      @unique
-  /** ISO 3166-1 alpha-2 (ex.: BR, PY, US, ES). Determina validação de doc fiscal e formato de telefone no cadastro. */
+  /**
+   * ISO 3166-1 alpha-2 (ex.: BR, PY, US, ES). Determina validação de doc fiscal e formato de telefone no cadastro.
+   */
   country               String?      @map("country") @db.VarChar(2)
+  /// Idioma padrão da organização: o que vale para quem ainda não escolheu o seu, e o que
+  /// decide a língua do convite antes de o convidado ter conta.
+  ///
+  /// Separado de `country` de propósito — uma empresa no México pode operar em inglês.
+  defaultLocale         String       @default("pt-BR") @map("default_locale") @db.VarChar(10)
   taxIdType             String?      @map("tax_id_type")
   taxIdMasked           String?      @map("tax_id_masked")
   taxIdHash             String?      @map("tax_id_hash")
@@ -284,11 +305,14 @@ model AuthTenant {
   createdAt             DateTime     @default(now()) @map("created_at")
   updatedAt             DateTime     @updatedAt @map("updated_at")
 
-  memberships    AuthMembership[]
-  accessGroups   AuthAccessGroup[]
+  memberships      AuthMembership[]
+  accessGroups     AuthAccessGroup[]
   termsAcceptances AuthTermsAcceptance[]
-  invites        AuthInvite[]
+  invites          AuthInvite[]
 
+  /// Existe também o índice único parcial `auth_tenants_tax_id_hash_country_live_key`
+  /// (migração 20260915090000): um tenant vivo por documento fiscal e país. O schema não o
+  /// descreve; se `prisma migrate dev` gerar DROP dele, apague essa linha da migração gerada.
   @@index([taxIdHash])
   @@index([status])
   @@index([country])
@@ -315,8 +339,8 @@ model AuthMembership {
   createdAt                    DateTime         @default(now()) @map("created_at")
   updatedAt                    DateTime         @updatedAt @map("updated_at")
 
-  user                   AuthUser                      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tenant                 AuthTenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user                   AuthUser                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant                 AuthTenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   roles                  AuthMembershipRole[]
   accessGroupLinks       AuthMembershipAccessGroup[]
   notificationPreference AuthNotificationPreference?
@@ -341,17 +365,17 @@ model AuthMembershipRole {
 }
 
 model AuthAccessGroup {
-  id                   String            @id @default(uuid()) @db.Uuid
-  tenantId             String            @map("tenant_id") @db.Uuid
-  groupId              String            @map("group_id")
-  nameEncrypted        String            @map("name_encrypted")
-  slug                 String
-  descriptionEncrypted String?           @map("description_encrypted")
-  status               AccessGroupStatus @default(active)
-  deletedAt            DateTime?         @map("deleted_at")
-  deletedByMembershipId String?          @map("deleted_by_membership_id") @db.Uuid
-  createdAt            DateTime          @default(now()) @map("created_at")
-  updatedAt            DateTime          @updatedAt @map("updated_at")
+  id                    String            @id @default(uuid()) @db.Uuid
+  tenantId              String            @map("tenant_id") @db.Uuid
+  groupId               String            @map("group_id")
+  nameEncrypted         String            @map("name_encrypted")
+  slug                  String
+  descriptionEncrypted  String?           @map("description_encrypted")
+  status                AccessGroupStatus @default(active)
+  deletedAt             DateTime?         @map("deleted_at")
+  deletedByMembershipId String?           @map("deleted_by_membership_id") @db.Uuid
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
 
   tenant      AuthTenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   memberLinks AuthMembershipAccessGroup[]
@@ -374,7 +398,6 @@ model AuthMembershipAccessGroup {
   @@unique([membershipId, accessGroupId])
   @@map("auth_membership_access_groups")
 }
-
 
 model AuthNotificationPreference {
   id                        String   @id @default(uuid()) @db.Uuid
@@ -410,21 +433,26 @@ model AuthAccountDeletionRequest {
 }
 
 model AuthTermsAcceptance {
-  id              String              @id @default(uuid()) @db.Uuid
-  userId          String?             @map("user_id") @db.Uuid
-  membershipId    String?             @map("membership_id") @db.Uuid
-  tenantId        String?             @map("tenant_id") @db.Uuid
-  flow            TermsAcceptanceFlow
-  termsVersion    String              @map("terms_version")
-  privacyVersion  String?             @map("privacy_version")
-  acceptedAt      DateTime            @default(now()) @map("accepted_at")
-  ipAddressHash   String?             @map("ip_address_hash")
-  userAgentHash   String?             @map("user_agent_hash")
-  createdAt       DateTime            @default(now()) @map("created_at")
+  id             String              @id @default(uuid()) @db.Uuid
+  userId         String?             @map("user_id") @db.Uuid
+  membershipId   String?             @map("membership_id") @db.Uuid
+  tenantId       String?             @map("tenant_id") @db.Uuid
+  flow           TermsAcceptanceFlow
+  termsVersion   String              @map("terms_version")
+  privacyVersion String?             @map("privacy_version")
+  /// Em que idioma o texto aceito estava escrito.
+  ///
+  /// Termos traduzidos não são o mesmo documento: a redação muda por jurisdição, e provar
+  /// consentimento exige saber qual versão a pessoa leu, não só qual número ela tinha.
+  locale         String              @default("pt-BR") @db.VarChar(10)
+  acceptedAt     DateTime            @default(now()) @map("accepted_at")
+  ipAddressHash  String?             @map("ip_address_hash")
+  userAgentHash  String?             @map("user_agent_hash")
+  createdAt      DateTime            @default(now()) @map("created_at")
 
-  user          AuthUser?          @relation(fields: [userId], references: [id], onDelete: SetNull)
-  membership    AuthMembership?    @relation(fields: [membershipId], references: [id], onDelete: SetNull)
-  tenant        AuthTenant?        @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  user       AuthUser?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  membership AuthMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  tenant     AuthTenant?     @relation(fields: [tenantId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([membershipId])
@@ -458,27 +486,33 @@ model AuthOAuthAccount {
 }
 
 model AuthInvite {
-  id                      String       @id @default(uuid()) @db.Uuid
-  tenantId                String       @map("tenant_id") @db.Uuid
-  emailEncrypted          String       @map("email_encrypted")
-  emailLookupHash         String       @map("email_lookup_hash")
-  firstNameEncrypted      String?      @map("first_name_encrypted")
-  lastNameEncrypted       String?      @map("last_name_encrypted")
-  invitedByUserId         String       @map("invited_by_user_id") @db.Uuid
-  invitedByMembershipId   String       @map("invited_by_membership_id") @db.Uuid
-  tokenHash               String       @unique @map("token_hash")
-  status                  InviteStatus @default(pending)
-  expiresAt               DateTime     @map("expires_at")
-  acceptedAt              DateTime?    @map("accepted_at")
-  acceptedByUserId        String?      @map("accepted_by_user_id") @db.Uuid
-  acceptedMembershipId    String?      @map("accepted_membership_id") @db.Uuid
-  createdAt               DateTime     @default(now()) @map("created_at")
-  updatedAt               DateTime     @updatedAt @map("updated_at")
+  id                    String       @id @default(uuid()) @db.Uuid
+  tenantId              String       @map("tenant_id") @db.Uuid
+  emailEncrypted        String       @map("email_encrypted")
+  emailLookupHash       String       @map("email_lookup_hash")
+  firstNameEncrypted    String?      @map("first_name_encrypted")
+  lastNameEncrypted     String?      @map("last_name_encrypted")
+  invitedByUserId       String       @map("invited_by_user_id") @db.Uuid
+  invitedByMembershipId String       @map("invited_by_membership_id") @db.Uuid
+  tokenHash             String       @unique @map("token_hash")
+  /// Em que língua falar com quem ainda não tem conta.
+  ///
+  /// O convite é o único e-mail cujo destinatário não tem perfil para consultar. Sem esta
+  /// coluna, a saída seria o padrão do sistema — e um fornecedor mexicano receberia em
+  /// português o primeiro contato dele com o produto.
+  locale                String       @default("pt-BR") @db.VarChar(10)
+  status                InviteStatus @default(pending)
+  expiresAt             DateTime     @map("expires_at")
+  acceptedAt            DateTime?    @map("accepted_at")
+  acceptedByUserId      String?      @map("accepted_by_user_id") @db.Uuid
+  acceptedMembershipId  String?      @map("accepted_membership_id") @db.Uuid
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @updatedAt @map("updated_at")
 
-  tenant           AuthTenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  invitedByUser    AuthUser         @relation("InviteInvitedByUser", fields: [invitedByUserId], references: [id], onDelete: Cascade)
-  acceptedByUser   AuthUser?        @relation("InviteAcceptedByUser", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
-  roles            AuthInviteRole[]
+  tenant         AuthTenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedByUser  AuthUser         @relation("InviteInvitedByUser", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  acceptedByUser AuthUser?        @relation("InviteAcceptedByUser", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  roles          AuthInviteRole[]
 
   @@index([tenantId, emailLookupHash, status])
   @@index([tenantId, status])
@@ -497,4 +531,3 @@ model AuthInviteRole {
   @@unique([inviteId, role])
   @@map("auth_invite_roles")
 }
-

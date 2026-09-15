@@ -93,7 +93,7 @@ describe('member invites', () => {
       lastName: 'Convidado',
     });
 
-    expect(body.inviteLink).toContain('/convite/');
+    expect(body.inviteLink).toContain('/invite/');
     expect(body.inviteToken).toBeTruthy();
   });
 

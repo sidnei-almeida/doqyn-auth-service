@@ -106,7 +106,7 @@ describe('company signups', () => {
       payload: {
         ...payload,
         email: 'fraca@example.com',
-        taxId: '22333444000155',
+        taxId: '22333444000181',
         password: '12345678',
         confirmPassword: '12345678',
       },
@@ -161,7 +161,7 @@ describe('company signups', () => {
       payload: {
         ...payload,
         email: 'fail-provision@example.com',
-        taxId: '33444555000166',
+        taxId: '33444555000181',
       },
     });
 

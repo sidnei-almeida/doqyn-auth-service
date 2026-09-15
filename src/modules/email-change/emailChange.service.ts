@@ -34,7 +34,7 @@ import {
 import type { RequestEmailChangeInput } from './emailChange.schemas.js';
 
 function emailChangePath(token: string): string {
-  return `/confirmar-email/${encodeURIComponent(token)}`;
+  return `/confirm-email-change/${encodeURIComponent(token)}`;
 }
 
 async function invalidatePendingEmailChanges(userId: string): Promise<void> {
@@ -157,6 +157,7 @@ async function issueEmailChange(
     confirmUrl,
     expiresInMinutes: env.EMAIL_CHANGE_CODE_TTL_MINUTES,
     expiresInHours: env.EMAIL_CHANGE_TTL_HOURS,
+    locale: user.locale,
   });
 
   const requesterPublic = toPublicUser(user);

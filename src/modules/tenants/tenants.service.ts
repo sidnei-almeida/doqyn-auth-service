@@ -1,7 +1,7 @@
 import type { AuthTenant, TenantStatus, TenantType } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { decryptField, encryptField, hashLookup } from '../../security/crypto.js';
-import { detectTaxIdType, maskTaxId, normalizeTaxId, slugify } from '../../utils/normalize.js';
+import { detectTaxIdType, maskTaxId, normalizeTaxId } from '../../utils/normalize.js';
 
 export interface PublicTenant {
   id: string;
@@ -12,6 +12,10 @@ export interface PublicTenant {
   taxIdType: string | null;
   taxIdMasked: string | null;
   status: TenantStatus;
+  /** ISO 3166-1 alpha-2. Decide validação fiscal e formato de telefone — não decide idioma. */
+  country: string | null;
+  /** Idioma de quem ainda não escolheu o seu, e do convite antes de o convidado ter conta. */
+  defaultLocale: string;
 }
 
 export function toPublicTenant(tenant: AuthTenant): PublicTenant {
@@ -24,6 +28,8 @@ export function toPublicTenant(tenant: AuthTenant): PublicTenant {
     taxIdType: tenant.taxIdType,
     taxIdMasked: tenant.taxIdMasked,
     status: tenant.status,
+    country: tenant.country ?? null,
+    defaultLocale: tenant.defaultLocale,
   };
 }
 
@@ -55,7 +61,7 @@ export async function createTenant(input: CreateTenantInput): Promise<AuthTenant
       tenantType: input.tenantType,
       displayNameEncrypted: displayName ? encryptField(displayName) : null,
       displayNameLookupHash: displayName ? hashLookup(displayName.toLowerCase()) : null,
-      slug: input.slug ?? (displayName ? slugify(displayName) : null),
+      slug: input.slug ?? input.tenantId,
       taxIdType: taxIdNormalized ? detectTaxIdType(taxIdNormalized) : null,
       taxIdMasked: taxIdNormalized ? maskTaxId(taxIdNormalized) : null,
       taxIdHash,
@@ -79,7 +85,6 @@ export async function createOrGetTenantByTaxId(
 
   const tenantType: TenantType = personType === 'business' ? 'business' : 'individual';
   const tenantId = `tenant_${taxIdHash.slice(0, 16)}`;
-  const slug = displayName ? slugify(displayName) : tenantId;
 
   return createTenant({
     tenantId,
@@ -87,7 +92,6 @@ export async function createOrGetTenantByTaxId(
     displayName,
     taxId: normalized,
     status: 'pending',
-    slug,
   });
 }
 

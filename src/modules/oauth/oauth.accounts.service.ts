@@ -1,3 +1,4 @@
+import type { AuthUser } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { encryptField, hashLookup } from '../../security/crypto.js';
 import { normalizeEmail } from '../../utils/normalize.js';
@@ -87,29 +88,54 @@ async function createOAuthUser(identity: OAuthIdentity): Promise<PublicUser> {
   return toPublicUser(user);
 }
 
-async function linkOAuthAccount(userId: string, identity: OAuthIdentity): Promise<void> {
+/**
+ * Liga a identidade do provedor a uma conta que já existia com o mesmo e-mail.
+ *
+ * Se essa conta nunca provou o e-mail, a senha dela não é de confiança: qualquer pessoa pode abrir
+ * conta por formulário com o endereço de outra e esperar. Sem descartar a senha, o dono verdadeiro
+ * entrava pelo Google numa conta cuja senha o invasor conhecia — e o vínculo ainda destravava o
+ * login por senha dele. O provedor acabou de provar o e-mail, então a conta passa a verificada, a
+ * senha some e as sessões caem, tudo na mesma transação do vínculo. Quem quiser senha pede reset.
+ */
+async function linkOAuthAccount(existingUser: AuthUser, identity: OAuthIdentity): Promise<void> {
   const normalizedEmail = identity.email ? normalizeEmail(identity.email) : null;
+  const discardUntrustedPassword = !existingUser.emailVerified;
 
-  await prisma.authOAuthAccount.create({
-    data: {
-      userId,
-      provider: identity.provider,
-      providerSubject: identity.subject,
-      providerTenantId: identity.providerTenantId,
-      email: normalizedEmail,
-      emailVerified: identity.emailVerified,
-      displayName: identity.displayName,
-      avatarUrl: identity.avatarUrl,
-      lastLoginAt: new Date(),
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.authOAuthAccount.create({
+      data: {
+        userId: existingUser.id,
+        provider: identity.provider,
+        providerSubject: identity.subject,
+        providerTenantId: identity.providerTenantId,
+        email: normalizedEmail,
+        emailVerified: identity.emailVerified,
+        displayName: identity.displayName,
+        avatarUrl: identity.avatarUrl,
+        lastLoginAt: new Date(),
+      },
+    });
+
+    if (!discardUntrustedPassword) return;
+
+    await tx.authCredential.deleteMany({ where: { userId: existingUser.id } });
+    await tx.authSession.updateMany({
+      where: { userId: existingUser.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    await tx.authUser.update({
+      where: { id: existingUser.id },
+      data: { emailVerified: true },
+    });
   });
 
   await logAuthAudit('auth.oauth_account_linked', {
-    userId,
+    userId: existingUser.id,
     metadata: {
       provider: identity.provider,
       email: redactEmail(normalizedEmail),
       providerTenantId: identity.providerTenantId,
+      untrustedPasswordDiscarded: discardUntrustedPassword,
     },
   });
 }
@@ -184,11 +210,11 @@ export async function resolveOAuthUser(identity: OAuthIdentity): Promise<{
         throw new Error('USER_DISABLED');
       }
 
-      await linkOAuthAccount(existingUser.id, identity);
+      await linkOAuthAccount(existingUser, identity);
 
       const memberships = await listUserMemberships(existingUser.id);
       return {
-        user: toPublicUser(existingUser),
+        user: toPublicUser({ ...existingUser, emailVerified: true }),
         linked: true,
         created: false,
         postLoginStatus: resolveOAuthPostLoginStatus(memberships),

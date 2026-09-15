@@ -222,10 +222,11 @@ describe('email verification', () => {
     expect((await send(app, `${user.id}.${past}.${signature}`)).statusCode).toBe(401);
   });
 
-  it('quem tem vínculo OAuth entra sem confirmar', async () => {
+  it('vínculo OAuth não isenta o login por senha de confirmar o e-mail', async () => {
     resetRateLimitStore();
     const user = await createUnverifiedUser('oauth@ev.test', 'tenant_ev_oauth');
-    // O Entra sem a claim `xms_edov` chega com emailVerified false; o vínculo é a prova aceita.
+    // O vínculo prova o caminho do provedor, não a senha: com a isenção, quem abriu a conta com o
+    // e-mail de outra pessoa logava pela senha dele assim que a dona entrasse pelo Google.
     await prisma.authOAuthAccount.create({
       data: {
         userId: user.id,
@@ -241,7 +242,8 @@ describe('email verification', () => {
       url: '/auth/login',
       payload: { email: 'oauth@ev.test', password: PASSWORD },
     });
-    expect(login.statusCode).toBe(200);
+    expect(login.statusCode).toBe(403);
+    expect(login.json().code).toBe('EMAIL_NOT_VERIFIED');
   });
 
   it('não emite código para e-mail já confirmado', async () => {

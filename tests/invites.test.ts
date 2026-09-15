@@ -268,26 +268,32 @@ describe('member invites', () => {
     expect(preview.json().code).toBe('INVITE_EXPIRED');
   });
 
-  it('usuário existente aceita convite sem criar nova senha', async () => {
+  it('usuário existente aceita convite logado na própria conta, sem criar senha', async () => {
     const adminCookie = await loginAsAdmin(app);
-    await createTestUser('existente@invite.test', 'senha-segura-123', {
+    const user = await createTestUser('existente@invite.test', 'senha-segura-123', {
       firstName: 'Existente',
       lastName: 'Usuario',
     });
 
     const { inviteToken } = await createInvite(app, adminCookie, 'existente@invite.test');
+    const { token } = await loginUser(app, 'existente@invite.test', 'senha-segura-123', cookieName);
 
     const accept = await app.inject({
       method: 'POST',
       url: `/auth/invites/${inviteToken}/accept`,
+      headers: { cookie: `${cookieName}=${token}` },
       payload: buildAcceptPayload({
-        firstName: 'Existente',
-        lastName: 'Usuario',
+        firstName: undefined,
+        lastName: undefined,
         password: undefined,
       }),
     });
     expect(accept.statusCode).toBe(200);
-    expect(accept.json().sessionEstablished).toBe(false);
+    expect(accept.json().sessionEstablished).toBe(true);
+    // A sessão é a que já existia: nenhum cookie novo sai daqui.
+    expect(accept.headers['set-cookie']).toBeUndefined();
+
+    expect(await prisma.authCredential.count({ where: { userId: user.id } })).toBe(1);
 
     const login = await app.inject({
       method: 'POST',
@@ -299,9 +305,57 @@ describe('member invites', () => {
     });
     expect(login.statusCode).toBe(200);
 
-    const memberships = await prisma.authMembership.count({
-      where: { status: 'active' },
+    const membership = await prisma.authMembership.findFirst({
+      where: { userId: user.id, status: 'active' },
     });
-    expect(memberships).toBeGreaterThanOrEqual(2);
+    expect(membership).toBeTruthy();
+  });
+
+  it('conta só com Google/Microsoft não ganha senha nem sessão de quem tem o link', async () => {
+    const adminCookie = await loginAsAdmin(app);
+    const oauthUser = await createTestUser('oauth@invite.test', 'descartada-123');
+    // Conta criada por OAuth não tem credencial de senha — era exatamente o alvo da tomada de conta.
+    await prisma.authCredential.deleteMany({ where: { userId: oauthUser.id } });
+
+    const { inviteToken } = await createInvite(app, adminCookie, 'oauth@invite.test');
+
+    const preview = await app.inject({ method: 'GET', url: `/auth/invites/${inviteToken}` });
+    expect(preview.json().invite.requiresLogin).toBe(true);
+    expect(preview.json().invite.requiresPassword).toBe(false);
+
+    const accept = await app.inject({
+      method: 'POST',
+      url: `/auth/invites/${inviteToken}/accept`,
+      payload: buildAcceptPayload({ password: 'Tomada#12345' }),
+    });
+    expect(accept.statusCode).toBe(401);
+    expect(accept.json().code).toBe('INVITE_LOGIN_REQUIRED');
+    expect(accept.headers['set-cookie']).toBeUndefined();
+    expect(await prisma.authCredential.count({ where: { userId: oauthUser.id } })).toBe(0);
+    expect(await prisma.authMembership.count({ where: { userId: oauthUser.id } })).toBe(0);
+
+    const invite = await prisma.authInvite.findUnique({
+      where: { tokenHash: hashInviteToken(inviteToken) },
+    });
+    expect(invite?.status).toBe('pending');
+  });
+
+  it('convite para uma conta não é aceito por quem está logado em outra', async () => {
+    const adminCookie = await loginAsAdmin(app);
+    const invited = await createTestUser('convidado@invite.test', 'senha-segura-123');
+    await createTestUser('intrusa@invite.test', 'senha-segura-123');
+
+    const { inviteToken } = await createInvite(app, adminCookie, 'convidado@invite.test');
+    const { token } = await loginUser(app, 'intrusa@invite.test', 'senha-segura-123', cookieName);
+
+    const accept = await app.inject({
+      method: 'POST',
+      url: `/auth/invites/${inviteToken}/accept`,
+      headers: { cookie: `${cookieName}=${token}` },
+      payload: buildAcceptPayload({ password: undefined }),
+    });
+    expect(accept.statusCode).toBe(403);
+    expect(accept.json().code).toBe('INVITE_WRONG_ACCOUNT');
+    expect(await prisma.authMembership.count({ where: { userId: invited.id } })).toBe(0);
   });
 });

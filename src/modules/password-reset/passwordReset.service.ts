@@ -2,9 +2,9 @@ import { prisma } from '../../db/prisma.js';
 import { loadEnv, isProduction } from '../../config/env.js';
 import { hashPasswordResetToken } from '../../security/crypto.js';
 import { generatePasswordResetToken } from '../../security/sessionToken.js';
-import { validatePasswordStrength } from '../../security/password.js';
+import { hashPassword, validatePasswordStrength } from '../../security/password.js';
 import { revokeAllUserSessions } from '../sessions/sessions.service.js';
-import { findUserByEmailLookup, updateUserPassword } from '../users/users.service.js';
+import { findUserByEmailLookup } from '../users/users.service.js';
 
 export interface PasswordResetRequestResult {
   resetToken?: string;
@@ -65,13 +65,32 @@ export async function resetPassword(
     return { success: false, reason: 'Token inválido ou expirado.' };
   }
 
-  await prisma.$transaction(async (tx) => {
-    await updateUserPassword(resetRecord.userId, newPassword);
-    await tx.authPasswordReset.update({
-      where: { id: resetRecord.id },
+  // Hash fora da transação: argon2 é lento, e a transação seguraria uma conexão do pgbouncer
+  // enquanto isso.
+  const passwordHash = await hashPassword(newPassword);
+
+  // O token é consumido por um UPDATE condicional, e a senha é escrita no mesmo `tx`. Antes o
+  // `usedAt` era conferido numa leitura e gravado sem condição, e a senha ia pelo `prisma` global,
+  // fora da transação: duas requisições com o mesmo token passavam as duas e trocavam a senha duas
+  // vezes.
+  const claimed = await prisma.$transaction(async (tx) => {
+    const claim = await tx.authPasswordReset.updateMany({
+      where: { id: resetRecord.id, usedAt: null, expiresAt: { gt: new Date() } },
       data: { usedAt: new Date() },
     });
+    if (claim.count !== 1) return false;
+
+    await tx.authCredential.upsert({
+      where: { userId: resetRecord.userId },
+      create: { userId: resetRecord.userId, passwordHash },
+      update: { passwordHash, passwordUpdatedAt: new Date() },
+    });
+    return true;
   });
+
+  if (!claimed) {
+    return { success: false, reason: 'Token já utilizado.' };
+  }
 
   await revokeAllUserSessions(resetRecord.userId);
 

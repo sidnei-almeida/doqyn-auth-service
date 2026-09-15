@@ -116,6 +116,45 @@ describe('password reset', () => {
     expect(secondAttempt.statusCode).toBe(400);
   });
 
+  it('mesmo token em pedidos simultâneos troca a senha uma vez só', async () => {
+    const user = await createOrGetUser({
+      email: 'corrida@empresa.com',
+      temporaryPassword: 'senha-antiga-123',
+    });
+
+    const requestResponse = await app.inject({
+      method: 'POST',
+      url: '/auth/request-password-reset',
+      payload: { email: 'corrida@empresa.com' },
+    });
+    const resetToken = requestResponse.json().resetToken;
+
+    const passwords = [
+      'corrida-senha-a1',
+      'corrida-senha-b2',
+      'corrida-senha-c3',
+      'corrida-senha-d4',
+    ];
+    const responses = await Promise.all(
+      passwords.map((newPassword) =>
+        app.inject({
+          method: 'POST',
+          url: '/auth/reset-password',
+          payload: { token: resetToken, newPassword },
+        }),
+      ),
+    );
+
+    const winners = responses.filter((response) => response.statusCode === 200);
+    expect(winners).toHaveLength(1);
+
+    const credential = await getUserCredential(user.id);
+    const matches = await Promise.all(
+      passwords.map((password) => verifyPassword(password, credential!.passwordHash)),
+    );
+    expect(matches.filter(Boolean)).toHaveLength(1);
+  });
+
   it('reset revoga sessões antigas', async () => {
     await createOrGetUser({
       email: 'revoke@empresa.com',

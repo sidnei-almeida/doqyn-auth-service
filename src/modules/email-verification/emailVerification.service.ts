@@ -196,7 +196,13 @@ export async function sendEmailVerificationCode(
     try {
       await sendEmail(message);
       emailSent = true;
-    } catch {
+    } catch (error) {
+      // Engolido calado, a recusa da Resend (domínio não verificado, remetente inválido) só
+      // aparecia como "não chegou o código". O motivo vem no erro e não carrega o conteúdo.
+      console.error(
+        'Envio do código de verificação falhou:',
+        error instanceof Error ? error.message : error,
+      );
       emailSent = false;
     }
   } else {

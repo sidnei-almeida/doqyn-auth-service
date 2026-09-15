@@ -37,6 +37,8 @@ export type AuditAction =
   | 'membership.blocked'
   | 'membership.unblocked'
   | 'membership.removed'
+  | 'membership.shares_revoked'
+  | 'membership.shares_revocation_failed'
   | 'membership.access_updated'
   | 'member.roles_updated'
   | 'member.access_groups_updated'

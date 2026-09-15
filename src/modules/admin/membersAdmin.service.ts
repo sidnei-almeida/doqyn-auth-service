@@ -27,6 +27,10 @@ import {
 import type { AdminActor } from './admin.types.js';
 import type { ApproveMembershipInput } from './admin.schemas.js';
 import { scheduleTenantMemberSync } from '../../integrations/memberSync.js';
+import {
+  revokeMemberSharesInMainApp,
+  type MembershipEndReason,
+} from '../../integrations/shareRevocation.js';
 
 export interface ListMembersFilters {
   tenantId?: string;
@@ -244,6 +248,49 @@ export async function updateMemberAccessGroups(
   return toPublicMembership(updated!);
 }
 
+/**
+ * Corta o que o membro compartilhou, depois que o vínculo dele acabou.
+ *
+ * Falha aqui não desfaz a remoção nem o bloqueio — o vínculo já caiu e a sessão também. Vai para a
+ * trilha como `membership.shares_revocation_failed`, que é onde se descobre o que ficou vivo.
+ */
+async function revokeSharesOfEndedMembership(
+  actor: AdminActor,
+  target: { userId: string; tenant: { tenantId: string } },
+  membershipId: string,
+  reason: MembershipEndReason,
+  ctx?: { ipHash?: string; userAgentHash?: string },
+): Promise<void> {
+  const result = await revokeMemberSharesInMainApp({
+    tenantId: target.tenant.tenantId,
+    userId: target.userId,
+    membershipId,
+    reason,
+  });
+
+  if (!result.ok) {
+    console.warn('[share-revocation] failed', { membershipId, error: result.error });
+  }
+
+  await logAuthAudit(
+    result.ok ? 'membership.shares_revoked' : 'membership.shares_revocation_failed',
+    auditCtx(actor, {
+      targetUserId: target.userId,
+      targetMembershipId: membershipId,
+      tenantTextId: target.tenant.tenantId,
+      ipHash: ctx?.ipHash,
+      userAgentHash: ctx?.userAgentHash,
+      metadata: result.ok
+        ? {
+            reason,
+            revokedInternal: result.revokedInternal,
+            revokedExternal: result.revokedExternal,
+          }
+        : { reason, error: result.error, statusCode: result.statusCode },
+    }),
+  );
+}
+
 export async function removeMember(
   actor: AdminActor,
   membershipId: string,
@@ -264,6 +311,7 @@ export async function removeMember(
   });
 
   await revokeSessionsByActiveMembership(membershipId);
+  await revokeSharesOfEndedMembership(actor, target, membershipId, 'membership_removed', ctx);
 
   await logAuthAudit(
     'membership.removed',
@@ -431,6 +479,10 @@ export async function blockMembership(
   });
 
   const revokedSessionsCount = await revokeSessionsByActiveMembership(targetMembershipId);
+  await revokeSharesOfEndedMembership(actor, target, targetMembershipId, 'membership_blocked', {
+    ipHash,
+    userAgentHash,
+  });
 
   await logAuthAudit(
     'membership.blocked',

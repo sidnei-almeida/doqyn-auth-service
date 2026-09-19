@@ -5,6 +5,7 @@ import { auditCtx, logAuthAudit } from '../audit/authAudit.service.js';
 import { assertPlatformOperation } from '../admin/adminAuthorization.js';
 import type { AdminActor } from '../admin/admin.types.js';
 import { revokeAllUserSessions } from '../sessions/sessionsRevoke.service.js';
+import { revokeSharesOfAnonymizedUser } from '../admin/memberShareRevocation.js';
 import { findUserById, toPublicUser } from '../users/users.service.js';
 import type { PublicUser } from '../users/users.schemas.js';
 
@@ -174,6 +175,9 @@ export async function anonymizeUser(
   });
 
   await revokeAllUserSessions(userId);
+  // Apagar os dados pessoais não apaga o que a pessoa compartilhou, e o link externo não pede
+  // login: sem este corte, o documento seguia servido em nome de uma conta que não existe mais.
+  const revokedShareMemberships = await revokeSharesOfAnonymizedUser(actor, userId, ctx);
 
   await logAuthAudit(
     'user.anonymized',
@@ -181,6 +185,7 @@ export async function anonymizeUser(
       targetUserId: userId,
       ipHash: ctx?.ipHash,
       userAgentHash: ctx?.userAgentHash,
+      metadata: { revokedShareMemberships },
     }),
   );
 

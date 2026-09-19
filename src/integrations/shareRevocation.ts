@@ -3,7 +3,11 @@ import { loadEnv } from '../config/env.js';
 /** O desligamento espera por esta chamada; sem prazo, um app travado segurava a tela do admin. */
 const SHARE_REVOCATION_TIMEOUT_MS = 10_000;
 
-export type MembershipEndReason = 'membership_removed' | 'membership_blocked';
+export type MembershipEndReason =
+  | 'membership_removed'
+  | 'membership_blocked'
+  | 'tenant_blocked'
+  | 'user_anonymized';
 
 export type RevokeMemberSharesInput = {
   /** Id textual do tenant (`tenant.tenantId`), o mesmo que o app grava nos grants. */

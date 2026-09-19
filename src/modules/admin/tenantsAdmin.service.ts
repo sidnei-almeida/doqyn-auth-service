@@ -12,6 +12,7 @@ import {
   type PublicTenant,
 } from '../tenants/tenants.service.js';
 import { assertPlatformOperation, assertLastAdminProtection } from './adminAuthorization.js';
+import { revokeSharesOfBlockedTenant } from './memberShareRevocation.js';
 import type { AdminActor } from './admin.types.js';
 import type { PaginatedResult } from './membersAdmin.service.js';
 
@@ -184,6 +185,9 @@ export async function blockTenant(
   });
 
   const revokedCount = await revokeAllTenantSessions(tenant.id);
+  // Derrubar a sessão não fecha o link externo: ele não pede login. Sem este corte, um tenant
+  // suspenso seguia servindo documento a terceiros por tudo que os membros compartilharam.
+  const revokedShareMemberships = await revokeSharesOfBlockedTenant(actor, tenant.id, ctx);
 
   await logAuthAudit(
     'tenant.blocked',
@@ -191,7 +195,7 @@ export async function blockTenant(
       tenantTextId,
       ipHash: ctx?.ipHash,
       userAgentHash: ctx?.userAgentHash,
-      metadata: { revokedSessions: revokedCount },
+      metadata: { revokedSessions: revokedCount, revokedShareMemberships },
     }),
   );
 

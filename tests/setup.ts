@@ -89,6 +89,7 @@ beforeEach(async () => {
   await prisma.authLoginAttempt.deleteMany();
   await prisma.authEmailVerification.deleteMany();
   await prisma.authEmailChange.deleteMany();
+  await prisma.authEmailOutbox.deleteMany();
   await prisma.authPasswordReset.deleteMany();
   await prisma.authSession.deleteMany();
   await prisma.authNotificationPreference.deleteMany();

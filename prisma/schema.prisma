@@ -63,6 +63,20 @@ enum TermsAcceptanceFlow {
   invite_accept
 }
 
+enum AuthEmailOutboxPurpose {
+  email_verification
+  password_reset
+  email_change
+  invite
+}
+
+enum AuthEmailOutboxStatus {
+  queued
+  sending
+  sent
+  failed
+}
+
 model AuthUser {
   id                    String         @id @default(uuid()) @db.Uuid
   emailEncrypted        String         @map("email_encrypted")
@@ -130,8 +144,9 @@ model AuthUser {
   termsAcceptances   AuthTermsAcceptance[]
   oauthAccounts      AuthOAuthAccount[]
 
-  invitesSent     AuthInvite[] @relation("InviteInvitedByUser")
-  invitesAccepted AuthInvite[] @relation("InviteAcceptedByUser")
+  invitesSent        AuthInvite[]      @relation("InviteInvitedByUser")
+  invitesAccepted    AuthInvite[]      @relation("InviteAcceptedByUser")
+  emailOutboxEntries AuthEmailOutbox[]
 
   @@index([whatsappLookupHash])
   @@index([status])
@@ -241,6 +256,61 @@ model AuthEmailChange {
   @@index([userId, usedAt])
   @@index([newEmailLookupHash])
   @@map("auth_email_changes")
+}
+
+/// Fila durável dos quatro e-mails transacionais (verificação, redefinição, troca de e-mail,
+/// convite), drenada em intervalo por `emailOutboxDrain.ts` em vez de enviada na própria
+/// requisição.
+///
+/// `html`/`text` guardam o corpo já renderizado, e não uma referência para renderizar depois: os
+/// quatro segredos que estes e-mails carregam (código de 6 dígitos, link de redefinição, código/
+/// link de troca, link de convite) só existem em texto claro no momento em que o chamador monta a
+/// mensagem — depois disso, só o hash sobrevive na tabela de origem (`AuthEmailVerification`,
+/// `AuthPasswordReset`, `AuthEmailChange`, `AuthInvite`). Um drenador que rodasse minutos depois
+/// não teria como reconstruir o segredo — por isso esta é a primeira tabela do schema a guardar
+/// conteúdo secreto em texto claro, e não só o hash dele. **Não "corrija" isto para renderizar na
+/// hora da drenagem** — a informação para fazê-lo não existe mais nesse momento.
+///
+/// Por ser a exceção, a janela de exposição é fechada de dois lados assim que o segredo perde a
+/// utilidade: `html`/`text` são zerados no mesmo UPDATE que marca `sent` (o drenador não precisa
+/// mais deles) ou `failed` (uma linha morta não é lugar de guardar credencial viva), e uma
+/// varredura de retenção zera qualquer linha ainda `queued`/`sending` mais velha que
+/// `EMAIL_VERIFICATION_TTL_HOURS` — o maior TTL entre os quatro segredos — porque depois desse
+/// prazo o conteúdo já não abre nada, mesmo que a linha nunca tenha sido drenada.
+model AuthEmailOutbox {
+  id                String                 @id @default(uuid()) @db.Uuid
+  /// Nulo para convite: quem recebe ainda não tem conta.
+  userId            String?                @map("user_id") @db.Uuid
+  purpose           AuthEmailOutboxPurpose
+  /// Endereço do destinatário, cifrado como `AuthUser.emailEncrypted` — esta tabela não ganha
+  /// hash de busca porque nada procura uma linha pelo destinatário.
+  toEncrypted       String                 @map("to_encrypted")
+  subject           String
+  /// Nunca secreto ("Confirme seu e-mail", "Redefinição de senha") — sobrevive à limpeza abaixo.
+  html              String                 @db.Text
+  text              String                 @db.Text
+  fromName          String?                @map("from_name")
+  fromEmail         String?                @map("from_email")
+  replyToName       String?                @map("reply_to_name")
+  replyToEmail      String?                @map("reply_to_email")
+  status            AuthEmailOutboxStatus  @default(queued)
+  attempts          Int                    @default(0)
+  nextAttemptAt     DateTime?              @map("next_attempt_at")
+  /// Quando um drenador reivindicou a linha. Mais velho que o prazo da trava conta como
+  /// abandonado — ver `EMAIL_OUTBOX_LOCK_EXPIRA_MS`.
+  lockedAt          DateTime?              @map("locked_at")
+  providerMessageId String?                @map("provider_message_id")
+  /// Mensagem de erro já mascarada (`redactEmailsInText`) — nunca o endereço em claro.
+  failureReason     String?                @map("failure_reason")
+  sentAt            DateTime?              @map("sent_at")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+
+  user AuthUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status, nextAttemptAt])
+  @@index([userId])
+  @@map("auth_email_outbox")
 }
 
 model AuthLoginAttempt {

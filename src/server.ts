@@ -6,6 +6,7 @@ import {
 } from './db/databaseHealth.js';
 import { disconnectPrisma, prisma } from './db/prisma.js';
 import { connectRedisOnBoot, closeRedis } from './redis/redisClient.js';
+import { startEmailOutboxDrain, stopEmailOutboxDrain } from './modules/email/emailOutboxDrain.js';
 
 async function main() {
   const env = loadEnv();
@@ -24,9 +25,12 @@ async function main() {
     process.exit(1);
   }
 
+  startEmailOutboxDrain();
+
   const app = await buildApp();
 
   const shutdown = async () => {
+    stopEmailOutboxDrain();
     await app.close();
     await disconnectPrisma();
     await closeRedis();

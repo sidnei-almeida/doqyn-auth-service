@@ -4,12 +4,8 @@ import { decryptField, hashPasswordResetToken } from '../../security/crypto.js';
 import { generatePasswordResetToken } from '../../security/sessionToken.js';
 import { hashPassword, validatePasswordStrength } from '../../security/password.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
-import {
-  getPlatformSender,
-  isPlatformEmailConfigured,
-  redactEmailsInText,
-  sendEmail,
-} from '../email/email.service.js';
+import { getPlatformSender, redactEmailsInText } from '../email/email.service.js';
+import { enqueueEmail } from '../email/emailOutbox.service.js';
 import { renderPasswordResetEmail } from '../email/renderPasswordResetEmail.js';
 import { revokeAllUserSessions } from '../sessions/sessions.service.js';
 import { findUserByEmailLookup, findUserById } from '../users/users.service.js';
@@ -88,40 +84,25 @@ export async function deliverPasswordResetEmail(input: {
       locale: user.locale,
     });
 
-    if (isPlatformEmailConfigured()) {
-      const sender = getPlatformSender();
-      try {
-        await sendEmail({
-          to: email,
-          subject,
-          text,
-          html,
-          from: { name: sender.name, email: sender.email },
-        });
-        emailSent = true;
-      } catch (error) {
-        // O corpo do erro do provedor (Resend, SMTP) pode repetir o destinatário, então o
-        // endereço sai mascarado antes de virar log ou metadata de auditoria.
-        failureReason = redactEmailsInText(
-          error instanceof Error ? error.message : String(error),
-        );
-        console.error('Envio do e-mail de redefinição de senha falhou:', failureReason);
-        emailSent = false;
-      }
-    } else {
-      // Sem provedor de plataforma, o adapter de console registra e nada sai — o mesmo que o
-      // código de verificação faz. O motivo vai para a auditoria com nome próprio: sem ele,
-      // "ninguém recebe porque o e-mail está desligado" e "o provedor está recusando" ficavam
-      // indistinguíveis, os dois gravando só `emailSent: false`.
-      failureReason = 'platform_email_not_configured';
-      await sendEmail({
+    const sender = getPlatformSender();
+    const { queued } = await enqueueEmail({
+      userId: user.id,
+      purpose: 'password_reset',
+      message: {
         to: email,
         subject,
         text,
         html,
-        from: { name: getPlatformSender().name, email: getPlatformSender().email },
-      });
-    }
+        from: { name: sender.name, email: sender.email },
+      },
+    });
+    emailSent = queued;
+    // Sem provedor de plataforma, `enqueueEmail` já caiu no adapter de console e não gravou
+    // linha nenhuma. O motivo vai para a auditoria com nome próprio: sem ele, "ninguém recebe
+    // porque o e-mail está desligado" e "o provedor está recusando" ficavam indistinguíveis, os
+    // dois gravando só `emailSent: false` — e agora que o outbox existe, só o primeiro dos dois
+    // ainda é sabido nesta função (o segundo é do drenador, ver comentário do `finally` abaixo).
+    if (!queued) failureReason = 'platform_email_not_configured';
   } catch (error) {
     failureReason = redactEmailsInText(error instanceof Error ? error.message : String(error));
     console.error('Falha ao preparar o e-mail de redefinição de senha:', failureReason);
@@ -131,9 +112,13 @@ export async function deliverPasswordResetEmail(input: {
     // renderização quebrar. Falhar aqui não tem a quem avisar em produção (a resposta já foi),
     // então grita no log: é a única pista de que um pedido existiu sem deixar linha.
     //
-    // A garantia continua sendo "melhor esforço": um deploy no meio desta cauda perde a linha.
-    // Fechar isso de verdade pede o outbox que está planejado para o auth, não um `await` aqui —
-    // esperar antes da resposta devolveria o tempo que denuncia quais contas existem.
+    // O outbox fechou a maior parte da janela de "melhor esforço" que existia aqui: o envio
+    // em si não depende mais de um `fetch` para a Resend/SMTP sobreviver ao processo, porque
+    // `enqueueEmail` já persistiu a linha antes deste ponto — quem entrega de fato é o drenador,
+    // que roda numa réplica viva. O que resta é bem mais estreito: dois INSERTs locais no mesmo
+    // Postgres (o de `enqueueEmail`, já committado, e o deste `logAuthAudit`, ainda por vir) — não
+    // mais um round-trip de rede a um terceiro. Continua sem `await` deliberado por fora: esperar
+    // antes da resposta devolveria o tempo que denuncia quais contas existem.
     try {
       await logAuthAudit('password.reset_requested', {
         userId: input.userId,

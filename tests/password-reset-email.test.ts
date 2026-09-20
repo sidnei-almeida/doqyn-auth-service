@@ -5,6 +5,7 @@ import { prisma } from '../src/db/prisma.js';
 import { resetEnvCache } from '../src/config/env.js';
 import { createOrGetUser } from '../src/modules/users/users.service.js';
 import { deliverPasswordResetEmail } from '../src/modules/password-reset/passwordReset.service.js';
+import { drainEmailOutbox } from '../src/modules/email/emailOutboxDrain.js';
 import { TEST_ENV } from './setup.js';
 
 /**
@@ -108,13 +109,9 @@ describe('e-mail de redefinição de senha', () => {
 
     expect(emailSent).toBe(true);
     expect(token).toBeDefined();
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const requestInit = fetchSpy.mock.calls[0]?.[1] as { body: string };
-    const payload = JSON.parse(requestInit.body);
-    // O token do link é o mesmo que a entrega devolveu, e é o mesmo que foi gravado: sem isto o
-    // e-mail poderia levar um token que o banco não reconhece.
-    expect(payload.html).toContain(`/reset-password/${token}`);
-    expect(payload.text).toContain(`/reset-password/${token}`);
+    // Enfileirar não manda nada na hora — o drenador ainda nem rodou.
+    expect(fetchSpy).toHaveBeenCalledTimes(0);
+
     const gravado = await prisma.authPasswordReset.findFirst({ where: { userId: user.id } });
     expect(gravado).not.toBeNull();
 
@@ -122,13 +119,29 @@ describe('e-mail de redefinição de senha', () => {
       where: { userId: user.id, action: 'password.reset_requested' },
     });
     expect(audit?.metadata).toMatchObject({ emailSent: true });
+
+    await drainEmailOutbox();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const requestInit = fetchSpy.mock.calls[0]?.[1] as { body: string };
+    const payload = JSON.parse(requestInit.body);
+    // O token do link é o mesmo que a entrega devolveu, e é o mesmo que foi gravado: sem isto o
+    // e-mail poderia levar um token que o banco não reconhece.
+    expect(payload.html).toContain(`/reset-password/${token}`);
+    expect(payload.text).toContain(`/reset-password/${token}`);
   });
 
-  it('com o envio recusado pelo provedor, devolve false e mesmo assim grava a auditoria', async () => {
+  it('com o envio recusado pelo provedor, a linha do outbox vira failed com motivo mascarado', async () => {
     enableResend();
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response('{"message":"Invalid `to` field: falha-reset@empresa.com"}', { status: 422 })),
+      vi.fn(
+        async () =>
+          new Response(
+            '{"message":"Invalid `to` field: falha-reset@empresa.com"}',
+            { status: 422 },
+          ),
+      ),
     );
 
     const user = await createOrGetUser({
@@ -138,15 +151,23 @@ describe('e-mail de redefinição de senha', () => {
 
     const { emailSent } = await deliverPasswordResetEmail({ userId: user.id });
 
-    expect(emailSent).toBe(false);
+    // A entrega só enfileirou — não sabe ainda que o provedor vai recusar.
+    expect(emailSent).toBe(true);
 
     const audit = await prisma.authAuditLog.findFirst({
       where: { userId: user.id, action: 'password.reset_requested' },
     });
     expect(audit).not.toBeNull();
-    expect((audit?.metadata as Record<string, unknown>)?.emailSent).toBe(false);
-    const failureReason = (audit?.metadata as Record<string, unknown>)?.failureReason as string;
-    expect(failureReason).toBeDefined();
+    expect((audit?.metadata as Record<string, unknown>)?.emailSent).toBe(true);
+    expect((audit?.metadata as Record<string, unknown>)?.failureReason).toBeUndefined();
+
+    await drainEmailOutbox();
+
+    const linha = await prisma.authEmailOutbox.findFirst({
+      where: { userId: user.id, purpose: 'password_reset' },
+    });
+    expect(linha?.status).toBe('failed');
+    const failureReason = linha?.failureReason ?? '';
     expect(failureReason).not.toContain('falha-reset@empresa.com');
     // O endereço tem que aparecer mascarado: provar só a ausência do original deixaria o teste
     // passar com o mascaramento apagado, desde que o erro nunca citasse o destinatário.
@@ -177,6 +198,8 @@ describe('e-mail de redefinição de senha', () => {
     // Fora de produção a rota espera a entrega, então o token já existe quando ela responde.
     const { resetToken } = response.json() as { resetToken?: string };
     expect(resetToken).toBeDefined();
+
+    await drainEmailOutbox();
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const requestInit = fetchSpy.mock.calls[0]?.[1] as { body: string };

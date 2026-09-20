@@ -6,6 +6,7 @@ import { resetEnvCache } from '../src/config/env.js';
 import { hashLookup } from '../src/security/crypto.js';
 import { normalizeEmail, normalizeTaxId } from '../src/utils/normalize.js';
 import { DOQYN_TERMS_VERSION } from '../src/modules/terms/terms.constants.js';
+import { drainEmailOutbox } from '../src/modules/email/emailOutboxDrain.js';
 import { TEST_ENV } from './setup.js';
 
 /**
@@ -76,7 +77,7 @@ describe('cadastro cujo primeiro e-mail de verificação falha', () => {
     acceptedTermsVersion: DOQYN_TERMS_VERSION,
   };
 
-  it('responde 200 com emailVerificationRequired, verificationTicket e emailSent: false', async () => {
+  it('a recusa do provedor deixa de aparecer na resposta e passa a morar no outbox', async () => {
     const response = await app.inject({
       method: 'POST',
       url: '/auth/individual-signups',
@@ -88,7 +89,10 @@ describe('cadastro cujo primeiro e-mail de verificação falha', () => {
     expect(body.ok).toBe(true);
     expect(body.emailVerificationRequired).toBe(true);
     expect(body.verificationTicket).toBeTruthy();
-    expect(body.emailSent).toBe(false);
+    // Com o outbox, `emailSent` responde "foi enfileirado", não "a Resend aceitou" — o desfecho
+    // do provedor ainda não é conhecido quando a resposta é montada. `false` aqui passou a
+    // significar apenas "não há provedor configurado".
+    expect(body.emailSent).toBe(true);
 
     const taxIdHash = hashLookup(normalizeTaxId(payload.taxId));
     const tenant = await prisma.authTenant.findFirst({ where: { taxIdHash } });
@@ -97,14 +101,33 @@ describe('cadastro cujo primeiro e-mail de verificação falha', () => {
     const user = await prisma.authUser.findFirst({
       where: { emailLookupHash: hashLookup(normalizeEmail(payload.email)) },
     });
+
+    // A linha nasce enfileirada, e o cadastro não esperou a rede para responder.
+    const enfileirada = await prisma.authEmailOutbox.findFirst({
+      where: { userId: user!.id, purpose: 'email_verification' },
+    });
+    expect(enfileirada?.status).toBe('queued');
+    expect(enfileirada?.attempts).toBe(0);
+
+    // Só agora o provedor é chamado — e recusa com 422, que não melhora repetindo.
+    await drainEmailOutbox();
+
+    const depois = await prisma.authEmailOutbox.findUniqueOrThrow({
+      where: { id: enfileirada!.id },
+    });
+    expect(depois.status).toBe('failed');
+    expect(depois.failureReason).toBeTruthy();
+    // O corpo do erro da Resend repete o destinatário; ele não pode ficar legível em lugar nenhum.
+    expect(depois.failureReason).not.toContain('entrega-falha@example.com');
+    // E o corpo renderizado, que carregava o código de seis dígitos, some junto com a desistência.
+    expect(depois.html).toBe('');
+    expect(depois.text).toBe('');
+
     const audit = await prisma.authAuditLog.findFirst({
       where: { userId: user!.id, action: 'email_verification.sent' },
       orderBy: { createdAt: 'desc' },
     });
     expect(audit).not.toBeNull();
-    const metadata = audit?.metadata as Record<string, unknown>;
-    expect(metadata.emailSent).toBe(false);
-    expect(typeof metadata.failureReason).toBe('string');
-    expect(metadata.failureReason as string).not.toContain('entrega-falha@example.com');
+    expect((audit?.metadata as Record<string, unknown>).emailSent).toBe(true);
   });
 });

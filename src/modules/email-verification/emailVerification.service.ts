@@ -23,12 +23,8 @@ import {
   ValidationError,
 } from '../../utils/errors.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
-import {
-  getPlatformSender,
-  isPlatformEmailConfigured,
-  redactEmailsInText,
-  sendEmail,
-} from '../email/email.service.js';
+import { getPlatformSender } from '../email/email.service.js';
+import { enqueueEmail } from '../email/emailOutbox.service.js';
 import { renderEmailVerificationEmail } from '../email/renderEmailVerificationEmail.js';
 import { findUserById, toPublicUser } from '../users/users.service.js';
 
@@ -195,24 +191,11 @@ export async function sendEmailVerificationCode(
     from: { name: sender.name, email: sender.email },
   };
 
-  // Sai pelo SMTP da plataforma; sem ele o adapter de console registra e nada é enviado.
-  let emailSent = false;
-  let failureReason: string | undefined;
-  if (isPlatformEmailConfigured()) {
-    try {
-      await sendEmail(message);
-      emailSent = true;
-    } catch (error) {
-      // Engolido calado, a recusa da Resend (domínio não verificado, remetente inválido) só
-      // aparecia como "não chegou o código". O corpo do erro pode repetir o destinatário, então
-      // o endereço sai mascarado — tanto no log quanto na auditoria.
-      failureReason = redactEmailsInText(error instanceof Error ? error.message : String(error));
-      console.error('Envio do código de verificação falhou:', failureReason);
-      emailSent = false;
-    }
-  } else {
-    await sendEmail(message);
-  }
+  // Enfileira no outbox — o envio de fato é trabalho do drenador, e a resposta não espera a
+  // rede da Resend/SMTP. Sem plataforma configurada, `enqueueEmail` cai no mesmo adapter de
+  // console que este ponto sempre usou.
+  const { queued } = await enqueueEmail({ userId, purpose: 'email_verification', message });
+  const emailSent = queued;
 
   await prisma.authEmailVerification.update({
     where: { id: created.id },
@@ -221,14 +204,14 @@ export async function sendEmailVerificationCode(
 
   await logAuthAudit('email_verification.sent', {
     userId,
-    metadata: { emailSent, ...(failureReason ? { failureReason } : {}) },
+    metadata: { emailSent },
     ipHash,
   });
 
   return {
     ok: true as const,
     message: emailSent
-      ? `Enviamos um código de 6 dígitos para ${email}.`
+      ? `Um código de 6 dígitos está a caminho de ${email}.`
       : 'Código criado, mas o e-mail não saiu. Em desenvolvimento, use o código abaixo.',
     email,
     expiresAt: expiresAt.toISOString(),

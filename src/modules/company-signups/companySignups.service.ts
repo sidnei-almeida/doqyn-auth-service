@@ -46,6 +46,11 @@ export interface CompanySignupSuccess {
   sessionToken?: string;
   emailVerificationRequired?: true;
   verificationTicket?: string;
+  /**
+   * Só faz sentido junto de `emailVerificationRequired`: diz se o primeiro código realmente saiu.
+   * `false` é a conta criada cujo e-mail não chegou — ver `signupOrchestrator.ts`.
+   */
+  emailSent?: boolean;
 }
 
 /** Dois modos, mesma lógica do cadastro PF — ver `individualSignups.service.ts`. */

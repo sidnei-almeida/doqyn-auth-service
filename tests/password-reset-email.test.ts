@@ -128,7 +128,7 @@ describe('e-mail de redefinição de senha', () => {
     enableResend();
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response('{"message":"Invalid `to` field: entrega-reset@empresa.com"}', { status: 422 })),
+      vi.fn(async () => new Response('{"message":"Invalid `to` field: falha-reset@empresa.com"}', { status: 422 })),
     );
 
     const user = await createOrGetUser({
@@ -153,5 +153,8 @@ describe('e-mail de redefinição de senha', () => {
     const failureReason = (audit?.metadata as Record<string, unknown>)?.failureReason as string;
     expect(failureReason).toBeDefined();
     expect(failureReason).not.toContain('falha-reset@empresa.com');
+    // O endereço tem que aparecer mascarado: provar só a ausência do original deixaria o teste
+    // passar com o mascaramento apagado, desde que o erro nunca citasse o destinatário.
+    expect(failureReason).toContain('fa***@empresa.com');
   });
 });

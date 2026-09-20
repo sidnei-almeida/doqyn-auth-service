@@ -23,7 +23,8 @@ import {
 import { ConflictError, GoneError, NotFoundError, ValidationError } from '../../utils/errors.js';
 import { normalizeEmail } from '../../utils/normalize.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
-import { getPlatformSender, isPlatformEmailConfigured, sendEmail } from '../email/email.service.js';
+import { getPlatformSender } from '../email/email.service.js';
+import { enqueueEmail } from '../email/emailOutbox.service.js';
 import { renderEmailChangeEmail } from '../email/renderEmailChangeEmail.js';
 import {
   findUserByEmailLookup,
@@ -174,18 +175,10 @@ async function issueEmailChange(
     replyTo: { name: requesterName, email: currentEmail },
   };
 
-  // Sai pelo SMTP da plataforma; sem ele o adapter de console registra e nada é enviado.
-  let emailSent = false;
-  if (isPlatformEmailConfigured()) {
-    try {
-      await sendEmail(message);
-      emailSent = true;
-    } catch {
-      emailSent = false;
-    }
-  } else {
-    await sendEmail(message);
-  }
+  // Enfileira: a entrega é do drenador, e a resposta não espera a rede. Sem provedor
+  // configurado, `enqueueEmail` cai no mesmo adapter de console que este ponto sempre usou.
+  const { queued } = await enqueueEmail({ userId, purpose: 'email_change', message });
+  const emailSent = queued;
 
   await prisma.authEmailChange.update({
     where: { id: created.id },

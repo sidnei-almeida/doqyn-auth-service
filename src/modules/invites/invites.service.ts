@@ -65,7 +65,7 @@ export function inviteSecretsForInviter(
   token: string,
   env: Env = loadEnv(),
 ): { inviteLink?: string; inviteToken?: string } {
-  if (isProduction(env)) return {};
+  if (isProduction(env) || !env.AUTH_DEV_ECHO_TOKENS) return {};
   return { inviteLink: buildInviteLink(token, env), inviteToken: token };
 }
 

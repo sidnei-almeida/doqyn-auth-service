@@ -235,7 +235,11 @@ describe('outbox de e-mail', () => {
         text: 'segredo-velho',
         status: 'failed',
         attempts: 4,
-        createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000), // TTL de teste é 24h
+        // O prazo de retenção é o maior entre os quatro propósitos, e em ambiente de teste isso
+        // é INVITE_TTL_DAYS (default 7 dias, TEST_ENV não sobrescreve), não os 24h de
+        // EMAIL_VERIFICATION_TTL_HOURS — apesar de esta linha ser de password_reset, a varredura
+        // não distingue por propósito.
+        createdAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
       },
     });
 

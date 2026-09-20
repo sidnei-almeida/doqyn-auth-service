@@ -15,17 +15,26 @@ import {
  * Zera o corpo de linhas velhas demais para o segredo ainda valer, mesmo que nunca tenham sido
  * drenadas — uma instância cujo drenador nunca chegou a rodar (ou uma linha presa numa fila que
  * já não avança) não pode ser um jeito de guardar segredo em texto claro por tempo indefinido.
- * `EMAIL_VERIFICATION_TTL_HOURS` é o maior prazo entre os quatro segredos que passam por aqui
- * (código de verificação, link de redefinição, código/link de troca de e-mail, link de convite) —
- * passado esse prazo o conteúdo do e-mail já não abre nada, então mantê-lo em texto claro é
- * exposição pura, sem contrapartida.
+ * O prazo é o maior entre os quatro segredos que passam por aqui — código de verificação, link
+ * de redefinição, código/link de troca de e-mail, link de convite — calculado a cada passada, e
+ * não fixado num deles: `INVITE_TTL_DAYS` (padrão 7 dias) é sete vezes o `EMAIL_VERIFICATION_
+ * TTL_HOURS` (padrão 24h), e usar só este limpava convite ainda válido no primeiro dia de um
+ * drenador parado. Passado o prazo mais longo, o conteúdo do e-mail já não abre nada em nenhum
+ * dos quatro casos, então mantê-lo em texto claro é exposição pura, sem contrapartida.
  *
  * Não apaga a linha: `status`, `attempts` e `failureReason` continuam sendo a trilha de
  * auditoria de que aquele envio existiu e o que aconteceu com ele.
  */
 async function clearExpiredOutboxSecrets(): Promise<void> {
   const env = loadEnv();
-  const limiteRetencao = new Date(Date.now() - env.EMAIL_VERIFICATION_TTL_HOURS * 60 * 60 * 1000);
+  const prazosEmHoras = [
+    env.EMAIL_VERIFICATION_TTL_HOURS,
+    env.EMAIL_CHANGE_TTL_HOURS,
+    env.INVITE_TTL_DAYS * 24,
+    env.PASSWORD_RESET_TTL_MINUTES / 60,
+  ];
+  const maiorPrazoHoras = Math.max(...prazosEmHoras);
+  const limiteRetencao = new Date(Date.now() - maiorPrazoHoras * 60 * 60 * 1000);
   await prisma.authEmailOutbox.updateMany({
     where: { createdAt: { lt: limiteRetencao }, html: { not: '' } },
     data: { html: '', text: '' },
@@ -81,9 +90,15 @@ export async function drainEmailOutbox(): Promise<{
     // Outra instância pegou primeiro: seguir em frente é o certo, não competir.
     if (claim.count === 0) continue;
 
+    // Envio e contabilidade são dois `try` separados de propósito. Uma exceção na gravação do
+    // `sent` DEPOIS de a Resend já ter aceitado não pode cair no mesmo `catch` de quem trata
+    // falha de envio: cairia, incrementaria `attempts` e devolveria a linha para a fila, e a
+    // próxima passada mandaria a mesma mensagem de novo — a Resend já disse que sim, então
+    // reenviar aqui não corrige nada, só duplica.
+    let resultado: { providerMessageId?: string };
     try {
       const to = decryptField(linha.toEncrypted);
-      const resultado = await sendEmail({
+      resultado = await sendEmail({
         to,
         subject: linha.subject,
         html: linha.html,
@@ -95,21 +110,6 @@ export async function drainEmailOutbox(): Promise<{
           ? { name: linha.replyToName ?? undefined, email: linha.replyToEmail }
           : undefined,
       });
-
-      await prisma.authEmailOutbox.update({
-        where: { id: linha.id },
-        data: {
-          status: 'sent',
-          sentAt: new Date(),
-          lockedAt: null,
-          failureReason: null,
-          providerMessageId: resultado.providerMessageId ?? null,
-          // O segredo já foi entregue; o corpo não tem mais função aqui.
-          html: '',
-          text: '',
-        },
-      });
-      sent += 1;
     } catch (error) {
       // Forma desconhecida (não `EmailSendError`) é tratada como transitória: o console nunca
       // lança, então isto só dispara para Resend/SMTP, e os dois agora sempre lançam
@@ -139,7 +139,39 @@ export async function drainEmailOutbox(): Promise<{
 
       if (desiste) failed += 1;
       else retried += 1;
+      continue;
     }
+
+    // O envio já aconteceu. A partir daqui, uma pequena retentativa local absorve o blip comum
+    // (conexão do Postgres); se mesmo assim falhar, a linha fica presa em `sending` — visível no
+    // log, e não perdida: `sentAt: null` com `providerMessageId` preenchido diz que o envio
+    // ocorreu, e a próxima leitura manual encontra isso em vez de um reenvio silencioso.
+    let gravado = false;
+    for (let tentativaGravacao = 0; tentativaGravacao < 3 && !gravado; tentativaGravacao += 1) {
+      try {
+        await prisma.authEmailOutbox.update({
+          where: { id: linha.id },
+          data: {
+            status: 'sent',
+            sentAt: new Date(),
+            lockedAt: null,
+            failureReason: null,
+            providerMessageId: resultado.providerMessageId ?? null,
+            // O segredo já foi entregue; o corpo não tem mais função aqui.
+            html: '',
+            text: '',
+          },
+        });
+        gravado = true;
+      } catch (updateError) {
+        console.error('Gravação de e-mail enviado falhou (o envio já aconteceu; sem reenvio):', {
+          outboxId: linha.id,
+          tentativa: tentativaGravacao + 1,
+          error: updateError instanceof Error ? updateError.message : String(updateError),
+        });
+      }
+    }
+    if (gravado) sent += 1;
   }
 
   if (sent || failed || retried) {

@@ -177,8 +177,19 @@ async function issueEmailChange(
 
   // Enfileira: a entrega é do drenador, e a resposta não espera a rede. Sem provedor
   // configurado, `enqueueEmail` cai no mesmo adapter de console que este ponto sempre usou.
-  const { queued } = await enqueueEmail({ userId, purpose: 'email_change', message });
-  const emailSent = queued;
+  //
+  // Falha ao enfileirar (Postgres, não a Resend) não pode virar 500 — o pedido de troca já foi
+  // gravado, e a mesma degradação suave que sempre existiu para "a Resend recusou" vale aqui.
+  let emailSent: boolean;
+  try {
+    ({ queued: emailSent } = await enqueueEmail({ userId, purpose: 'email_change', message }));
+  } catch (error) {
+    console.error(
+      'Falha ao enfileirar e-mail de troca de endereço:',
+      error instanceof Error ? error.message : String(error),
+    );
+    emailSent = false;
+  }
 
   await prisma.authEmailChange.update({
     where: { id: created.id },
@@ -205,7 +216,7 @@ async function issueEmailChange(
     expiresAt: expiresAt.toISOString(),
     linkExpiresAt: tokenExpiresAt.toISOString(),
     emailSent,
-    ...(!isProduction(env) ? { confirmCode: code, confirmToken: token, confirmUrl } : {}),
+    ...(!isProduction(env) && env.AUTH_DEV_ECHO_TOKENS ? { confirmCode: code, confirmToken: token, confirmUrl } : {}),
   };
 }
 

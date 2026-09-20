@@ -54,7 +54,19 @@ export async function sendInviteEmail(input: SendInviteEmailInput): Promise<Send
   // `send_failed` deixou de existir como resposta: com o outbox, a recusa do provedor acontece
   // depois que esta função já respondeu, e inventar um desfecho aqui seria mentir. O que sobra
   // para dizer é se a mensagem ficou durável — e, quando não há provedor, que ela não ficou.
-  const { queued } = await enqueueEmail({ userId: null, purpose: 'invite', message });
+  //
+  // Falha ao enfileirar (Postgres) é o mesmo caso que "sem provedor" para quem chama: o convite
+  // já existe no banco, e devolver 500 aqui derrubaria uma criação que já aconteceu.
+  let queued: boolean;
+  try {
+    ({ queued } = await enqueueEmail({ userId: null, purpose: 'invite', message }));
+  } catch (error) {
+    console.error(
+      'Falha ao enfileirar e-mail de convite:',
+      error instanceof Error ? error.message : String(error),
+    );
+    queued = false;
+  }
   if (!queued) {
     return { sent: false, reason: 'smtp_not_configured' };
   }

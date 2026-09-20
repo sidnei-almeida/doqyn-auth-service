@@ -194,8 +194,20 @@ export async function sendEmailVerificationCode(
   // Enfileira no outbox — o envio de fato é trabalho do drenador, e a resposta não espera a
   // rede da Resend/SMTP. Sem plataforma configurada, `enqueueEmail` cai no mesmo adapter de
   // console que este ponto sempre usou.
-  const { queued } = await enqueueEmail({ userId, purpose: 'email_verification', message });
-  const emailSent = queued;
+  //
+  // O código de verificação já foi criado no banco antes daqui — uma falha ao enfileirar não
+  // pode virar 500 e derrubar um cadastro que já existe. Antes de existir outbox, essa mesma
+  // degradação suave era o comportamento (só que causada pela Resend, não pelo Postgres).
+  let emailSent: boolean;
+  try {
+    ({ queued: emailSent } = await enqueueEmail({ userId, purpose: 'email_verification', message }));
+  } catch (error) {
+    console.error(
+      'Falha ao enfileirar código de verificação:',
+      error instanceof Error ? error.message : String(error),
+    );
+    emailSent = false;
+  }
 
   await prisma.authEmailVerification.update({
     where: { id: created.id },
@@ -218,7 +230,7 @@ export async function sendEmailVerificationCode(
     emailSent,
     // Em desenvolvimento o código volta na resposta: sem SMTP configurado, não haveria outro jeito
     // de percorrer o fluxo inteiro. Em produção nunca sai daqui.
-    ...(!isProduction(env) ? { code, confirmUrl } : {}),
+    ...(!isProduction(env) && env.AUTH_DEV_ECHO_TOKENS ? { code, confirmUrl } : {}),
   };
 }
 

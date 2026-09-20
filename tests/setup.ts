@@ -30,6 +30,7 @@ function assertTestDatabase(databaseUrl: string): void {
 
 export const TEST_ENV = {
   NODE_ENV: 'test',
+  AUTH_DEV_ECHO_TOKENS: 'true',
   PORT: '4100',
   /**
    * O banco vem do ambiente que o `vitest.config.ts` montou — ver o comentário de lá.

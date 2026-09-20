@@ -210,4 +210,36 @@ describe('e-mail de redefinição de senha', () => {
     const gravado = await prisma.authPasswordReset.findFirst({ where: { userId: user.id } });
     expect(gravado).not.toBeNull();
   });
+  it('sem AUTH_DEV_ECHO_TOKENS a resposta tem a mesma forma para conta que existe e que não existe', async () => {
+    // O eco é o último lugar onde a resposta ainda distinguia os dois casos. Preso a
+    // NODE_ENV, um staging não carimbado como produção ligava esse oráculo por descuido.
+    process.env.AUTH_DEV_ECHO_TOKENS = 'false';
+    resetEnvCache();
+
+    try {
+      await createOrGetUser({
+        email: 'sem-eco@empresa.com',
+        temporaryPassword: 'senha-segura-123',
+      });
+
+      const existe = await app.inject({
+        method: 'POST',
+        url: '/auth/request-password-reset',
+        payload: { email: 'sem-eco@empresa.com' },
+      });
+      const naoExiste = await app.inject({
+        method: 'POST',
+        url: '/auth/request-password-reset',
+        payload: { email: 'ninguem-aqui@empresa.com' },
+      });
+
+      expect(existe.statusCode).toBe(200);
+      expect(naoExiste.statusCode).toBe(200);
+      expect(existe.json()).toEqual(naoExiste.json());
+      expect(Object.keys(existe.json()).sort()).toEqual(['message', 'ok']);
+    } finally {
+      process.env.AUTH_DEV_ECHO_TOKENS = 'true';
+      resetEnvCache();
+    }
+  });
 });

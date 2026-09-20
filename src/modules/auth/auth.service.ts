@@ -365,10 +365,10 @@ export async function handlePasswordResetRequest(
     return { ok: true, message: GENERIC_RESET_MESSAGE };
   }
 
-  // Fora de produção o token volta na resposta, e para isso é preciso esperar a entrega criá-lo.
-  // O tempo extra não importa aqui: o que o `await` denunciaria é quais contas existem, e num
-  // ambiente de desenvolvimento essa resposta já está na tela ao lado.
-  if (!isProduction(env)) {
+  // O token volta na resposta só onde alguém pediu explicitamente por isso — e para tê-lo é
+  // preciso esperar a entrega criá-lo. O tempo extra não importa neste caminho: quem ligou a
+  // flag já aceitou que este ambiente conta quais contas existem.
+  if (!isProduction(env) && env.AUTH_DEV_ECHO_TOKENS) {
     const { token } = await deliverPasswordResetEmail({
       userId,
       ipHash: ctx.ipHash,

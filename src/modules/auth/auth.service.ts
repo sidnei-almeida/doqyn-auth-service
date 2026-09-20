@@ -1,4 +1,5 @@
 import { prisma } from '../../db/prisma.js';
+import { isProduction, loadEnv } from '../../config/env.js';
 import { hashLookup } from '../../security/crypto.js';
 import { verifyPassword } from '../../security/password.js';
 import {
@@ -10,6 +11,7 @@ import type { RequestContext } from '../../security/requestContext.js';
 import { normalizeEmail } from '../../utils/normalize.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
 import {
+  deliverPasswordResetEmail,
   requestPasswordReset,
   resetPassword as resetPasswordService,
 } from '../password-reset/passwordReset.service.js';
@@ -358,18 +360,33 @@ export async function handlePasswordResetRequest(
 
   const result = await requestPasswordReset(normalizedEmail);
 
-  if (result.userId) {
-    await logAuthAudit('password.reset_requested', {
+  if (result.userId && result.token && result.email) {
+    // Sem `await`: esperar o envio faria a resposta demorar só quando o endereço existe, e isso
+    // cronometrado já diria "essa conta existe aqui" — a garantia de resposta genérica não é só
+    // o texto, é também o tempo. A auditoria `password.reset_requested` sai de dentro do envio.
+    deliverPasswordResetEmail({
       userId: result.userId,
+      token: result.token,
+      email: result.email,
+      locale: result.locale,
       ipHash: ctx.ipHash,
       userAgentHash: ctx.userAgentHash,
+    }).catch((error) => {
+      console.error(
+        'Disparo do e-mail de redefinição de senha falhou antes de tentar o envio:',
+        error instanceof Error ? error.message : String(error),
+      );
     });
   }
+
+  const env = loadEnv();
 
   return {
     ok: true,
     message: GENERIC_RESET_MESSAGE,
-    resetToken: result.resetToken,
+    // Em desenvolvimento o token volta na resposta: sem SMTP configurado, não haveria outro
+    // jeito de percorrer o fluxo inteiro. Em produção nunca sai daqui.
+    ...(!isProduction(env) && result.token ? { resetToken: result.token } : {}),
   };
 }
 

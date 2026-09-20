@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { renderInviteEmail } from '../src/modules/email/renderInviteEmail.js';
 import { renderEmailVerificationEmail } from '../src/modules/email/renderEmailVerificationEmail.js';
 import { renderEmailChangeEmail } from '../src/modules/email/renderEmailChangeEmail.js';
+import { renderPasswordResetEmail } from '../src/modules/email/renderPasswordResetEmail.js';
 import { duration, EMAIL_MESSAGES } from '../src/modules/email/emailMessages.js';
 
 const read = (rel: string) => readFileSync(resolve(process.cwd(), rel), 'utf8');
@@ -58,6 +59,18 @@ describe('e-mails do auth no idioma de quem recebe', () => {
     expect(rendered.subject).toBe('654 321 es tu código para cambiar el correo en DOQYN');
     expect(rendered.text).toContain('Correo actual: a@x.com');
     expect(rendered.html).toContain('Confirma tu nueva dirección');
+  });
+
+  it('redefinição de senha em espanhol só leva link, sem código', () => {
+    const rendered = renderPasswordResetEmail({
+      resetUrl: 'https://app.doqyn.com/reset-password/t',
+      expiresInMinutes: 30,
+      locale: 'es-419',
+    });
+    expect(rendered.subject).toBe('Restablece tu contraseña en DOQYN');
+    expect(rendered.text).toContain('Este enlace vence en 30 minutos.');
+    expect(rendered.html).toContain('Restablecer contraseña');
+    expect(rendered.html).toContain('app.doqyn.com/reset-password/t');
   });
 
   it('os três idiomas têm as mesmas frases', () => {

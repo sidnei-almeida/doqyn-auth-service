@@ -1,14 +1,28 @@
 import { prisma } from '../../db/prisma.js';
-import { loadEnv, isProduction } from '../../config/env.js';
-import { hashPasswordResetToken } from '../../security/crypto.js';
+import { getPublicAppBaseUrl, loadEnv } from '../../config/env.js';
+import { decryptField, hashPasswordResetToken } from '../../security/crypto.js';
 import { generatePasswordResetToken } from '../../security/sessionToken.js';
 import { hashPassword, validatePasswordStrength } from '../../security/password.js';
+import { logAuthAudit } from '../audit/authAudit.service.js';
+import {
+  getPlatformSender,
+  isPlatformEmailConfigured,
+  redactEmailsInText,
+  sendEmail,
+} from '../email/email.service.js';
+import { renderPasswordResetEmail } from '../email/renderPasswordResetEmail.js';
 import { revokeAllUserSessions } from '../sessions/sessions.service.js';
 import { findUserByEmailLookup } from '../users/users.service.js';
 
 export interface PasswordResetRequestResult {
-  resetToken?: string;
   userId?: string;
+  token?: string;
+  email?: string;
+  locale?: string | null;
+}
+
+function resetPath(token: string): string {
+  return `/reset-password/${encodeURIComponent(token)}`;
 }
 
 export async function requestPasswordReset(email: string): Promise<PasswordResetRequestResult> {
@@ -30,13 +44,79 @@ export async function requestPasswordReset(email: string): Promise<PasswordReset
     },
   });
 
-  const result: PasswordResetRequestResult = { userId: user.id };
+  // O token cru sempre volta daqui; quem decide o que chega pela HTTP (só fora de produção) é a
+  // camada de cima — este serviço não sabe, e não deveria saber, em que ambiente está rodando.
+  return {
+    userId: user.id,
+    token,
+    email: decryptField(user.emailEncrypted),
+    locale: user.locale,
+  };
+}
 
-  if (!isProduction(env)) {
-    result.resetToken = token;
+/**
+ * Monta e manda o e-mail de redefinição, e audita o pedido — mesmo quando o envio falha.
+ *
+ * Nunca relança: quem chama já devolveu a resposta genérica de `handlePasswordResetRequest`
+ * antes deste disparo terminar, então uma exceção aqui não teria mais ninguém esperando por ela.
+ */
+export async function deliverPasswordResetEmail(input: {
+  userId: string;
+  token: string;
+  email: string;
+  locale?: string | null;
+  ipHash?: string;
+  userAgentHash?: string;
+}): Promise<boolean> {
+  let emailSent = false;
+  let failureReason: string | undefined;
+
+  try {
+    const env = loadEnv();
+    const resetUrl = `${getPublicAppBaseUrl(env)}${resetPath(input.token)}`;
+    const { subject, text, html } = renderPasswordResetEmail({
+      resetUrl,
+      expiresInMinutes: env.PASSWORD_RESET_TTL_MINUTES,
+      locale: input.locale,
+    });
+
+    if (isPlatformEmailConfigured()) {
+      const sender = getPlatformSender();
+      try {
+        await sendEmail({
+          to: input.email,
+          subject,
+          text,
+          html,
+          from: { name: sender.name, email: sender.email },
+        });
+        emailSent = true;
+      } catch (error) {
+        // O corpo do erro do provedor (Resend, SMTP) pode repetir o destinatário, então o
+        // endereço sai mascarado antes de virar log ou metadata de auditoria.
+        failureReason = redactEmailsInText(
+          error instanceof Error ? error.message : String(error),
+        );
+        console.error('Envio do e-mail de redefinição de senha falhou:', failureReason);
+        emailSent = false;
+      }
+    }
+  } catch (error) {
+    failureReason = redactEmailsInText(error instanceof Error ? error.message : String(error));
+    console.error('Falha ao preparar o e-mail de redefinição de senha:', failureReason);
+    emailSent = false;
+  } finally {
+    // "Pediu redefinição" é fato independente de o e-mail ter saído — a auditoria sai mesmo se a
+    // renderização quebrar.
+    await logAuthAudit('password.reset_requested', {
+      userId: input.userId,
+      ipHash: input.ipHash,
+      userAgentHash: input.userAgentHash,
+      metadata: { emailSent, ...(failureReason ? { failureReason } : {}) },
+    });
   }
 
-  return result;
+  return emailSent;
 }
 
 export async function resetPassword(

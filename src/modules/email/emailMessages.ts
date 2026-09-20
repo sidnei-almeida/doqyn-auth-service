@@ -82,6 +82,20 @@ export type EmailMessages = {
     instruction: string;
     footNote: string;
   };
+  reset: {
+    subject: string;
+    textIntro: string;
+    textAction: string;
+    textExpires: (expiry: string) => string;
+    textIgnore: string;
+    eyebrow: string;
+    title: string;
+    lead: string;
+    instruction: string;
+    button: string;
+    linkFallback: (expiry: string) => string;
+    footNote: string;
+  };
 };
 
 export const EMAIL_MESSAGES: Record<SupportedLocale, EmailMessages> = {
@@ -139,6 +153,22 @@ export const EMAIL_MESSAGES: Record<SupportedLocale, EmailMessages> = {
       instruction: 'Digite o código abaixo na tela de confirmação.',
       footNote:
         'Você recebeu este e-mail porque ele foi indicado como novo endereço de uma conta DOQYN. Se não foi você, ignore esta mensagem — nada muda sem esta confirmação, e o endereço atual continua valendo.',
+    },
+    reset: {
+      subject: 'Redefina sua senha no DOQYN',
+      textIntro: 'Recebemos um pedido para redefinir a senha da sua conta no DOQYN.',
+      textAction: 'Para criar uma nova senha, use o link abaixo:',
+      textExpires: (expiry) => `Este link expira em ${expiry}.`,
+      textIgnore:
+        'Se você não pediu esta redefinição, ignore este e-mail — sua senha atual continua valendo.',
+      eyebrow: 'Redefinição de senha',
+      title: 'Redefina sua senha',
+      lead: 'Recebemos um pedido para redefinir a senha da sua conta no DOQYN.',
+      instruction: 'Use o botão abaixo para criar uma nova senha.',
+      button: 'Redefinir senha',
+      linkFallback: (expiry) => `Se o botão não abrir, use este endereço — ele vale por ${expiry}:`,
+      footNote:
+        'Você recebeu este e-mail porque alguém pediu a redefinição de senha desta conta no DOQYN. Se não foi você, ignore esta mensagem — sua senha atual continua valendo, e nada muda sem que você clique no link.',
     },
   },
 
@@ -198,6 +228,23 @@ export const EMAIL_MESSAGES: Record<SupportedLocale, EmailMessages> = {
       footNote:
         "You received this email because it was set as the new address of a DOQYN account. If it wasn't you, ignore this message — nothing changes without this confirmation, and the current address remains valid.",
     },
+    reset: {
+      subject: 'Reset your DOQYN password',
+      textIntro: 'We received a request to reset the password for your DOQYN account.',
+      textAction: 'To create a new password, use the link below:',
+      textExpires: (expiry) => `This link expires in ${expiry}.`,
+      textIgnore:
+        "If you didn't request this reset, ignore this email — your current password remains valid.",
+      eyebrow: 'Password reset',
+      title: 'Reset your password',
+      lead: 'We received a request to reset the password for your DOQYN account.',
+      instruction: 'Use the button below to create a new password.',
+      button: 'Reset password',
+      linkFallback: (expiry) =>
+        `If the button doesn't open, use this address — it's valid for ${expiry}:`,
+      footNote:
+        "You received this email because someone requested a password reset for this DOQYN account. If it wasn't you, ignore this message — your current password remains valid, and nothing changes unless you click the link.",
+    },
   },
 
   'es-419': {
@@ -256,6 +303,23 @@ export const EMAIL_MESSAGES: Record<SupportedLocale, EmailMessages> = {
       instruction: 'Ingresa el código de abajo en la pantalla de confirmación.',
       footNote:
         'Recibiste este correo porque se indicó como nueva dirección de una cuenta de DOQYN. Si no fuiste tú, ignora este mensaje — nada cambia sin esta confirmación, y la dirección actual sigue siendo válida.',
+    },
+    reset: {
+      subject: 'Restablece tu contraseña en DOQYN',
+      textIntro: 'Recibimos una solicitud para restablecer la contraseña de tu cuenta en DOQYN.',
+      textAction: 'Para crear una nueva contraseña, usa el enlace de abajo:',
+      textExpires: (expiry) => `Este enlace vence en ${expiry}.`,
+      textIgnore:
+        'Si no solicitaste este restablecimiento, ignora este correo — tu contraseña actual sigue siendo válida.',
+      eyebrow: 'Restablecimiento de contraseña',
+      title: 'Restablece tu contraseña',
+      lead: 'Recibimos una solicitud para restablecer la contraseña de tu cuenta en DOQYN.',
+      instruction: 'Usa el botón de abajo para crear una nueva contraseña.',
+      button: 'Restablecer contraseña',
+      linkFallback: (expiry) =>
+        `Si el botón no abre, usa esta dirección — es válida por ${expiry}:`,
+      footNote:
+        'Recibiste este correo porque alguien solicitó el restablecimiento de la contraseña de esta cuenta en DOQYN. Si no fuiste tú, ignora este mensaje — tu contraseña actual sigue siendo válida, y nada cambia a menos que hagas clic en el enlace.',
     },
   },
 };

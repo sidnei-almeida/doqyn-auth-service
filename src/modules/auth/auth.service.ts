@@ -358,36 +358,47 @@ export async function handlePasswordResetRequest(
     return { ok: true, message: GENERIC_RESET_MESSAGE };
   }
 
-  const result = await requestPasswordReset(normalizedEmail);
-
-  if (result.userId && result.token && result.email) {
-    // Sem `await`: esperar o envio faria a resposta demorar só quando o endereço existe, e isso
-    // cronometrado já diria "essa conta existe aqui" — a garantia de resposta genérica não é só
-    // o texto, é também o tempo. A auditoria `password.reset_requested` sai de dentro do envio.
-    deliverPasswordResetEmail({
-      userId: result.userId,
-      token: result.token,
-      email: result.email,
-      locale: result.locale,
-      ipHash: ctx.ipHash,
-      userAgentHash: ctx.userAgentHash,
-    }).catch((error) => {
-      console.error(
-        'Disparo do e-mail de redefinição de senha falhou antes de tentar o envio:',
-        error instanceof Error ? error.message : String(error),
-      );
-    });
-  }
-
+  const { userId } = await requestPasswordReset(normalizedEmail);
   const env = loadEnv();
 
-  return {
-    ok: true,
-    message: GENERIC_RESET_MESSAGE,
-    // Em desenvolvimento o token volta na resposta: sem SMTP configurado, não haveria outro
-    // jeito de percorrer o fluxo inteiro. Em produção nunca sai daqui.
-    ...(!isProduction(env) && result.token ? { resetToken: result.token } : {}),
-  };
+  if (!userId) {
+    return { ok: true, message: GENERIC_RESET_MESSAGE };
+  }
+
+  // Fora de produção o token volta na resposta, e para isso é preciso esperar a entrega criá-lo.
+  // O tempo extra não importa aqui: o que o `await` denunciaria é quais contas existem, e num
+  // ambiente de desenvolvimento essa resposta já está na tela ao lado.
+  if (!isProduction(env)) {
+    const { token } = await deliverPasswordResetEmail({
+      userId,
+      ipHash: ctx.ipHash,
+      userAgentHash: ctx.userAgentHash,
+    });
+
+    return {
+      ok: true,
+      message: GENERIC_RESET_MESSAGE,
+      ...(token ? { resetToken: token } : {}),
+    };
+  }
+
+  // Em produção nada disso é esperado: criar o token, descriptografar o endereço e falar com o
+  // provedor são trabalho que só o endereço conhecido paga, e pagá-lo antes de responder faz o
+  // relógio dizer o que a mensagem genérica se recusa a dizer.
+  void deliverPasswordResetEmail({
+    userId,
+    ipHash: ctx.ipHash,
+    userAgentHash: ctx.userAgentHash,
+  }).catch((error) => {
+    // `deliverPasswordResetEmail` trata os próprios erros e não relança; chegar aqui significa
+    // que a própria captura dela falhou, o que é defeito de código, não do provedor.
+    console.error(
+      'Entrega do e-mail de redefinição de senha rejeitou apesar da captura interna:',
+      error instanceof Error ? error.message : String(error),
+    );
+  });
+
+  return { ok: true, message: GENERIC_RESET_MESSAGE };
 }
 
 export async function handlePasswordReset(

@@ -12,79 +12,87 @@ import {
 } from '../email/email.service.js';
 import { renderPasswordResetEmail } from '../email/renderPasswordResetEmail.js';
 import { revokeAllUserSessions } from '../sessions/sessions.service.js';
-import { findUserByEmailLookup } from '../users/users.service.js';
+import { findUserByEmailLookup, findUserById } from '../users/users.service.js';
 
 export interface PasswordResetRequestResult {
   userId?: string;
-  token?: string;
-  email?: string;
-  locale?: string | null;
 }
 
 function resetPath(token: string): string {
   return `/reset-password/${encodeURIComponent(token)}`;
 }
 
+/**
+ * Só descobre de quem é o endereço. Nada mais.
+ *
+ * Tudo que distingue "existe" de "não existe" — gerar token, gravar a linha, descriptografar o
+ * endereço, renderizar, enviar — foi para `deliverPasswordResetEmail`, que roda fora da resposta.
+ * Enquanto a criação do token ficava aqui, o endereço conhecido pagava um INSERT que o
+ * desconhecido não pagava, e a diferença é medível: quem cronometrasse a resposta enumerava as
+ * contas mesmo com a mensagem sendo idêntica. Uma consulta indexada nos dois caminhos é o que
+ * torna a promessa de resposta genérica verdadeira no tempo, e não só no texto.
+ */
 export async function requestPasswordReset(email: string): Promise<PasswordResetRequestResult> {
   const user = await findUserByEmailLookup(email);
   if (!user) {
     return {};
   }
 
-  const token = generatePasswordResetToken();
-  const tokenHash = hashPasswordResetToken(token);
-  const env = loadEnv();
-  const expiresAt = new Date(Date.now() + env.PASSWORD_RESET_TTL_MINUTES * 60 * 1000);
-
-  await prisma.authPasswordReset.create({
-    data: {
-      userId: user.id,
-      tokenHash,
-      expiresAt,
-    },
-  });
-
-  // O token cru sempre volta daqui; quem decide o que chega pela HTTP (só fora de produção) é a
-  // camada de cima — este serviço não sabe, e não deveria saber, em que ambiente está rodando.
-  return {
-    userId: user.id,
-    token,
-    email: decryptField(user.emailEncrypted),
-    locale: user.locale,
-  };
+  return { userId: user.id };
 }
 
 /**
- * Monta e manda o e-mail de redefinição, e audita o pedido — mesmo quando o envio falha.
+ * Cria o token, monta o e-mail, manda, e audita o pedido — mesmo quando o envio falha.
  *
- * Nunca relança: quem chama já devolveu a resposta genérica de `handlePasswordResetRequest`
- * antes deste disparo terminar, então uma exceção aqui não teria mais ninguém esperando por ela.
+ * Roda fora da resposta HTTP em produção, e é por isso que tudo que distingue um endereço
+ * conhecido de um desconhecido mora aqui: o INSERT do token e o `decryptField` do endereço, além
+ * do envio. Os dois já causaram problema no caminho do pedido — o INSERT pelo tempo que
+ * acrescentava, e o `decryptField` porque **lança** quando nem a chave atual nem a anterior
+ * autenticam o campo (chave em rotação, linha corrompida), e ali dentro isso virava 500 para um
+ * endereço que existe contra 200 para um que não existe. Aqui a captura de fora engole os dois.
+ *
+ * Nunca relança: em produção quem chamou já respondeu, e não há mais ninguém esperando.
  */
 export async function deliverPasswordResetEmail(input: {
   userId: string;
-  token: string;
-  email: string;
-  locale?: string | null;
   ipHash?: string;
   userAgentHash?: string;
-}): Promise<boolean> {
+}): Promise<{ emailSent: boolean; token?: string }> {
   let emailSent = false;
   let failureReason: string | undefined;
+  let token: string | undefined;
 
   try {
     const env = loadEnv();
-    const resetUrl = `${getPublicAppBaseUrl(env)}${resetPath(input.token)}`;
+    const user = await findUserById(input.userId);
+    if (!user) {
+      // A conta sumiu entre a busca e o disparo. Não é erro de ninguém, e não há e-mail a mandar.
+      failureReason = 'user_not_found';
+      return { emailSent: false };
+    }
+
+    token = generatePasswordResetToken();
+    await prisma.authPasswordReset.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashPasswordResetToken(token),
+        expiresAt: new Date(Date.now() + env.PASSWORD_RESET_TTL_MINUTES * 60 * 1000),
+      },
+    });
+
+    const email = decryptField(user.emailEncrypted);
+    const resetUrl = `${getPublicAppBaseUrl(env)}${resetPath(token)}`;
     const { subject, text, html } = renderPasswordResetEmail({
       resetUrl,
       expiresInMinutes: env.PASSWORD_RESET_TTL_MINUTES,
-      locale: input.locale,
+      locale: user.locale,
     });
 
     if (isPlatformEmailConfigured()) {
       const sender = getPlatformSender();
       try {
         await sendEmail({
-          to: input.email,
+          to: email,
           subject,
           text,
           html,
@@ -100,6 +108,19 @@ export async function deliverPasswordResetEmail(input: {
         console.error('Envio do e-mail de redefinição de senha falhou:', failureReason);
         emailSent = false;
       }
+    } else {
+      // Sem provedor de plataforma, o adapter de console registra e nada sai — o mesmo que o
+      // código de verificação faz. O motivo vai para a auditoria com nome próprio: sem ele,
+      // "ninguém recebe porque o e-mail está desligado" e "o provedor está recusando" ficavam
+      // indistinguíveis, os dois gravando só `emailSent: false`.
+      failureReason = 'platform_email_not_configured';
+      await sendEmail({
+        to: email,
+        subject,
+        text,
+        html,
+        from: { name: getPlatformSender().name, email: getPlatformSender().email },
+      });
     }
   } catch (error) {
     failureReason = redactEmailsInText(error instanceof Error ? error.message : String(error));
@@ -107,16 +128,33 @@ export async function deliverPasswordResetEmail(input: {
     emailSent = false;
   } finally {
     // "Pediu redefinição" é fato independente de o e-mail ter saído — a auditoria sai mesmo se a
-    // renderização quebrar.
-    await logAuthAudit('password.reset_requested', {
-      userId: input.userId,
-      ipHash: input.ipHash,
-      userAgentHash: input.userAgentHash,
-      metadata: { emailSent, ...(failureReason ? { failureReason } : {}) },
-    });
+    // renderização quebrar. Falhar aqui não tem a quem avisar em produção (a resposta já foi),
+    // então grita no log: é a única pista de que um pedido existiu sem deixar linha.
+    //
+    // A garantia continua sendo "melhor esforço": um deploy no meio desta cauda perde a linha.
+    // Fechar isso de verdade pede o outbox que está planejado para o auth, não um `await` aqui —
+    // esperar antes da resposta devolveria o tempo que denuncia quais contas existem.
+    try {
+      await logAuthAudit('password.reset_requested', {
+        userId: input.userId,
+        ipHash: input.ipHash,
+        userAgentHash: input.userAgentHash,
+        metadata: {
+          emailSent,
+          // Cortado: a mensagem vem de um terceiro (nodemailer repete linha crua do servidor),
+          // e isto é persistido.
+          ...(failureReason ? { failureReason: failureReason.slice(0, 300) } : {}),
+        },
+      });
+    } catch (error) {
+      console.error(
+        'Auditoria do pedido de redefinição de senha não foi gravada:',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }
 
-  return emailSent;
+  return { emailSent, token };
 }
 
 export async function resetPassword(

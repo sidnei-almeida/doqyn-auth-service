@@ -104,19 +104,19 @@ describe('e-mail de redefinição de senha', () => {
       temporaryPassword: 'senha-segura-123',
     });
 
-    const sent = await deliverPasswordResetEmail({
-      userId: user.id,
-      token: 'token-de-teste-abc123',
-      email: 'entrega-reset@empresa.com',
-      locale: 'pt-BR',
-    });
+    const { emailSent, token } = await deliverPasswordResetEmail({ userId: user.id });
 
-    expect(sent).toBe(true);
+    expect(emailSent).toBe(true);
+    expect(token).toBeDefined();
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const requestInit = fetchSpy.mock.calls[0]?.[1] as { body: string };
     const payload = JSON.parse(requestInit.body);
-    expect(payload.html).toContain('/reset-password/token-de-teste-abc123');
-    expect(payload.text).toContain('/reset-password/token-de-teste-abc123');
+    // O token do link é o mesmo que a entrega devolveu, e é o mesmo que foi gravado: sem isto o
+    // e-mail poderia levar um token que o banco não reconhece.
+    expect(payload.html).toContain(`/reset-password/${token}`);
+    expect(payload.text).toContain(`/reset-password/${token}`);
+    const gravado = await prisma.authPasswordReset.findFirst({ where: { userId: user.id } });
+    expect(gravado).not.toBeNull();
 
     const audit = await prisma.authAuditLog.findFirst({
       where: { userId: user.id, action: 'password.reset_requested' },
@@ -136,14 +136,9 @@ describe('e-mail de redefinição de senha', () => {
       temporaryPassword: 'senha-segura-123',
     });
 
-    const sent = await deliverPasswordResetEmail({
-      userId: user.id,
-      token: 'token-de-teste-falha',
-      email: 'falha-reset@empresa.com',
-      locale: 'pt-BR',
-    });
+    const { emailSent } = await deliverPasswordResetEmail({ userId: user.id });
 
-    expect(sent).toBe(false);
+    expect(emailSent).toBe(false);
 
     const audit = await prisma.authAuditLog.findFirst({
       where: { userId: user.id, action: 'password.reset_requested' },
@@ -156,5 +151,40 @@ describe('e-mail de redefinição de senha', () => {
     // O endereço tem que aparecer mascarado: provar só a ausência do original deixaria o teste
     // passar com o mascaramento apagado, desde que o erro nunca citasse o destinatário.
     expect(failureReason).toContain('fa***@empresa.com');
+  });
+
+  it('o endpoint liga na entrega: pedir pela rota cria o token daquele usuário e manda o e-mail', async () => {
+    // A lacuna que este caso fecha: os outros chamam `deliverPasswordResetEmail` direto, e os que
+    // batem na rota rodavam com e-mail desligado. Entre os dois, ninguém provava que
+    // `handlePasswordResetRequest` passa o usuário certo para a entrega — trocar os argumentos na
+    // chamada deixava a suíte inteira verde.
+    enableResend();
+    const fetchSpy = vi.fn(async () => new Response('', { status: 200 }));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const user = await createOrGetUser({
+      email: 'ponta-a-ponta@empresa.com',
+      temporaryPassword: 'senha-segura-123',
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/request-password-reset',
+      payload: { email: 'ponta-a-ponta@empresa.com' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    // Fora de produção a rota espera a entrega, então o token já existe quando ela responde.
+    const { resetToken } = response.json() as { resetToken?: string };
+    expect(resetToken).toBeDefined();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const requestInit = fetchSpy.mock.calls[0]?.[1] as { body: string };
+    const payload = JSON.parse(requestInit.body);
+    expect(payload.to).toEqual(['ponta-a-ponta@empresa.com']);
+    expect(payload.html).toContain(`/reset-password/${resetToken}`);
+
+    const gravado = await prisma.authPasswordReset.findFirst({ where: { userId: user.id } });
+    expect(gravado).not.toBeNull();
   });
 });

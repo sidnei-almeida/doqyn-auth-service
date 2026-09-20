@@ -4,6 +4,7 @@ import { provisionTenantInMainApp } from '../../integrations/appProvisioning.js'
 import { hashSessionToken } from '../../security/crypto.js';
 import { ConflictError, ValidationError } from '../../utils/errors.js';
 import { logAuthAudit, type AuditAction } from '../audit/authAudit.service.js';
+import { redactEmailsInText } from '../email/email.service.js';
 import type { PublicMembership } from '../memberships/memberships.schemas.js';
 import { toPublicMembership } from '../memberships/memberships.service.js';
 import { createSession } from '../sessions/sessions.service.js';
@@ -37,6 +38,12 @@ export type SignupSuccessBase = {
   emailVerificationRequired?: true;
   /** O passe que autoriza pedir e conferir o código sem sessão. */
   verificationTicket?: string;
+  /**
+   * Só faz sentido junto de `emailVerificationRequired`: diz se o primeiro código realmente
+   * saiu. `false` significa que a conta foi criada mas o e-mail não chegou — quem recebe isto
+   * decide se avisa a pessoa a pedir "reenviar" em vez de mandar conferir a caixa de entrada.
+   */
+  emailSent?: boolean;
 };
 
 /**
@@ -152,15 +159,28 @@ export async function finalizeSignupProvisioning(input: {
       await import('../email-verification/emailVerification.service.js');
     const { issueEmailVerificationTicket } = await import('../../security/verificationTicket.js');
 
-    // O envio não pode derrubar um cadastro que já criou empresa e membership. Se o e-mail não
-    // sair, a pessoa pede outro código pela tela de confirmação.
-    await sendEmailVerificationCode(input.created.user.id, input.ipHash).catch(() => undefined);
+    // O envio não pode derrubar um cadastro que já criou empresa e membership — se o e-mail não
+    // sair, a pessoa pede outro código pela tela de confirmação. Mas "não derrubar" não é
+    // "não contar a ninguém": o resultado é devolvido, e não engolido, para que a tela saiba
+    // que o primeiro código não chegou.
+    let emailSent = false;
+    try {
+      const result = await sendEmailVerificationCode(input.created.user.id, input.ipHash);
+      emailSent = result.emailSent;
+    } catch (error) {
+      console.error(
+        'Envio do primeiro código de verificação falhou no cadastro:',
+        redactEmailsInText(error instanceof Error ? error.message : String(error)),
+      );
+      emailSent = false;
+    }
 
     return {
       ...base,
       message: 'Conta criada. Confirme seu e-mail para entrar.',
       emailVerificationRequired: true,
       verificationTicket: issueEmailVerificationTicket(input.created.user.id),
+      emailSent,
     };
   }
 

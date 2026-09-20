@@ -255,6 +255,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         ? {
             emailVerificationRequired: true,
             verificationTicket: result.verificationTicket,
+            emailSent: result.emailSent,
           }
         : {}),
     });
@@ -333,6 +334,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         ? {
             emailVerificationRequired: true,
             verificationTicket: result.verificationTicket,
+            emailSent: result.emailSent,
           }
         : {}),
     });

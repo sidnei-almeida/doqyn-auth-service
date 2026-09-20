@@ -197,6 +197,7 @@ export async function sendEmailVerificationCode(
 
   // Sai pelo SMTP da plataforma; sem ele o adapter de console registra e nada é enviado.
   let emailSent = false;
+  let failureReason: string | undefined;
   if (isPlatformEmailConfigured()) {
     try {
       await sendEmail(message);
@@ -204,11 +205,9 @@ export async function sendEmailVerificationCode(
     } catch (error) {
       // Engolido calado, a recusa da Resend (domínio não verificado, remetente inválido) só
       // aparecia como "não chegou o código". O corpo do erro pode repetir o destinatário, então
-      // o endereço sai mascarado.
-      console.error(
-        'Envio do código de verificação falhou:',
-        redactEmailsInText(error instanceof Error ? error.message : String(error)),
-      );
+      // o endereço sai mascarado — tanto no log quanto na auditoria.
+      failureReason = redactEmailsInText(error instanceof Error ? error.message : String(error));
+      console.error('Envio do código de verificação falhou:', failureReason);
       emailSent = false;
     }
   } else {
@@ -222,7 +221,7 @@ export async function sendEmailVerificationCode(
 
   await logAuthAudit('email_verification.sent', {
     userId,
-    metadata: { emailSent },
+    metadata: { emailSent, ...(failureReason ? { failureReason } : {}) },
     ipHash,
   });
 

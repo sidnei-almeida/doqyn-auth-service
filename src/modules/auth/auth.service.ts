@@ -1,4 +1,5 @@
 import { prisma } from '../../db/prisma.js';
+import { isProduction, loadEnv } from '../../config/env.js';
 import { hashLookup } from '../../security/crypto.js';
 import { verifyPassword } from '../../security/password.js';
 import {
@@ -10,6 +11,7 @@ import type { RequestContext } from '../../security/requestContext.js';
 import { normalizeEmail } from '../../utils/normalize.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
 import {
+  deliverPasswordResetEmail,
   requestPasswordReset,
   resetPassword as resetPasswordService,
 } from '../password-reset/passwordReset.service.js';
@@ -157,42 +159,43 @@ export async function login(
   // Senha confere, mas o e-mail ainda não foi provado: não há sessão daqui.
   //
   // O cadastro por formulário afirma um endereço, não demonstra ter acesso a ele — e sem esta
-  // porta qualquer pessoa abriria conta com o e-mail de outra e entraria no app. Quem chegou por
-  // Google ou Microsoft está isento: o provedor já fez essa prova.
+  // porta qualquer pessoa abriria conta com o e-mail de outra e entraria no app.
+  //
+  // Vínculo com Google ou Microsoft NÃO isenta aqui. Ele prova o caminho do provedor, não a senha:
+  // com a isenção, quem abriu a conta com o e-mail da vítima esperava ela entrar pelo Google e
+  // passava a logar com a senha que ele mesmo escolheu. O vínculo a conta não verificada já
+  // descarta a senha e marca o e-mail (`linkOAuthAccount`), então o dono legítimo não cai aqui.
   if (!user.emailVerified) {
-    const { hasLinkedOAuthAccount } = await import('../users/users.service.js');
-    if (!(await hasLinkedOAuthAccount(user.id))) {
-      await recordLoginAttempt(emailLookupHash, ctx.ipHash, false, 'email_not_verified');
-      await logAuthAudit('login.failed', {
-        userId: user.id,
-        ipHash: ctx.ipHash,
-        userAgentHash: ctx.userAgentHash,
-        metadata: { reason: 'email_not_verified' },
-      });
+    await recordLoginAttempt(emailLookupHash, ctx.ipHash, false, 'email_not_verified');
+    await logAuthAudit('login.failed', {
+      userId: user.id,
+      ipHash: ctx.ipHash,
+      userAgentHash: ctx.userAgentHash,
+      metadata: { reason: 'email_not_verified' },
+    });
 
-      // O código sai junto com a recusa: a pessoa acertou a senha, então já é ela, e obrigá-la a
-      // apertar "enviar" numa tela seguinte só adiciona um passo.
-      //
-      // `onlyIfMissing` é o que impede o tiro no pé: sem ele, tentar entrar rotacionava o código
-      // e matava o que já estava na caixa de entrada da pessoa. A falha é silenciosa porque uma
-      // recusa de envio não pode virar erro de login.
-      const { sendEmailVerificationCode } =
-        await import('../email-verification/emailVerification.service.js');
-      await sendEmailVerificationCode(user.id, ctx.ipHash, { onlyIfMissing: true }).catch(
-        () => undefined,
-      );
+    // O código sai junto com a recusa: a pessoa acertou a senha, então já é ela, e obrigá-la a
+    // apertar "enviar" numa tela seguinte só adiciona um passo.
+    //
+    // `onlyIfMissing` é o que impede o tiro no pé: sem ele, tentar entrar rotacionava o código
+    // e matava o que já estava na caixa de entrada da pessoa. A falha é silenciosa porque uma
+    // recusa de envio não pode virar erro de login.
+    const { sendEmailVerificationCode } =
+      await import('../email-verification/emailVerification.service.js');
+    await sendEmailVerificationCode(user.id, ctx.ipHash, { onlyIfMissing: true }).catch(
+      () => undefined,
+    );
 
-      const { issueEmailVerificationTicket } = await import('../../security/verificationTicket.js');
-      return {
-        success: false,
-        code: 'EMAIL_NOT_VERIFIED',
-        message: AUTH_ERROR_MESSAGES.EMAIL_NOT_VERIFIED,
-        statusCode: 403,
-        // O ticket viaja em `details` porque é isso que a rota já repassa ao cliente. Ele é o que
-        // autoriza pedir e conferir o código sem sessão, e só existe depois da senha certa.
-        details: { verificationTicket: issueEmailVerificationTicket(user.id) },
-      };
-    }
+    const { issueEmailVerificationTicket } = await import('../../security/verificationTicket.js');
+    return {
+      success: false,
+      code: 'EMAIL_NOT_VERIFIED',
+      message: AUTH_ERROR_MESSAGES.EMAIL_NOT_VERIFIED,
+      statusCode: 403,
+      // O ticket viaja em `details` porque é isso que a rota já repassa ao cliente. Ele é o que
+      // autoriza pedir e conferir o código sem sessão, e só existe depois da senha certa.
+      details: { verificationTicket: issueEmailVerificationTicket(user.id) },
+    };
   }
 
   const { listUserMemberships } = await import('../memberships/memberships.service.js');
@@ -355,21 +358,47 @@ export async function handlePasswordResetRequest(
     return { ok: true, message: GENERIC_RESET_MESSAGE };
   }
 
-  const result = await requestPasswordReset(normalizedEmail);
+  const { userId } = await requestPasswordReset(normalizedEmail);
+  const env = loadEnv();
 
-  if (result.userId) {
-    await logAuthAudit('password.reset_requested', {
-      userId: result.userId,
+  if (!userId) {
+    return { ok: true, message: GENERIC_RESET_MESSAGE };
+  }
+
+  // O token volta na resposta só onde alguém pediu explicitamente por isso — e para tê-lo é
+  // preciso esperar a entrega criá-lo. O tempo extra não importa neste caminho: quem ligou a
+  // flag já aceitou que este ambiente conta quais contas existem.
+  if (!isProduction(env) && env.AUTH_DEV_ECHO_TOKENS) {
+    const { token } = await deliverPasswordResetEmail({
+      userId,
       ipHash: ctx.ipHash,
       userAgentHash: ctx.userAgentHash,
     });
+
+    return {
+      ok: true,
+      message: GENERIC_RESET_MESSAGE,
+      ...(token ? { resetToken: token } : {}),
+    };
   }
 
-  return {
-    ok: true,
-    message: GENERIC_RESET_MESSAGE,
-    resetToken: result.resetToken,
-  };
+  // Em produção nada disso é esperado: criar o token, descriptografar o endereço e falar com o
+  // provedor são trabalho que só o endereço conhecido paga, e pagá-lo antes de responder faz o
+  // relógio dizer o que a mensagem genérica se recusa a dizer.
+  void deliverPasswordResetEmail({
+    userId,
+    ipHash: ctx.ipHash,
+    userAgentHash: ctx.userAgentHash,
+  }).catch((error) => {
+    // `deliverPasswordResetEmail` trata os próprios erros e não relança; chegar aqui significa
+    // que a própria captura dela falhou, o que é defeito de código, não do provedor.
+    console.error(
+      'Entrega do e-mail de redefinição de senha rejeitou apesar da captura interna:',
+      error instanceof Error ? error.message : String(error),
+    );
+  });
+
+  return { ok: true, message: GENERIC_RESET_MESSAGE };
 }
 
 export async function handlePasswordReset(

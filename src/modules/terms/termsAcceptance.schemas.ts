@@ -13,6 +13,11 @@ export const termsAcceptanceFields = {
     .refine((value) => value === DOQYN_TERMS_VERSION, {
       message: 'A versão dos Termos e Condições enviada não é válida.',
     }),
+  /**
+   * Em que idioma os termos foram lidos. Opcional para não recusar o cliente antigo: sem ele, o
+   * aceite fica em pt-BR, que era o único texto que existia.
+   */
+  acceptedTermsLocale: z.string().trim().max(10).optional(),
 };
 
 export const termsAcceptanceSchema = z.object(termsAcceptanceFields);

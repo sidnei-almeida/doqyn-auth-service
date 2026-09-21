@@ -1,4 +1,5 @@
 import { loadEnv } from '../config/env.js';
+import { APP_INTEGRATION_TIMEOUT_MS } from './appProvisioning.js';
 import {
   internalBuildTenantMemberSnapshot,
   type InternalTenantMemberSnapshot,
@@ -23,6 +24,7 @@ export async function syncTenantMemberInMainApp(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(snapshot),
+      signal: AbortSignal.timeout(APP_INTEGRATION_TIMEOUT_MS),
     });
 
     const data = (await response.json().catch(() => ({}))) as {

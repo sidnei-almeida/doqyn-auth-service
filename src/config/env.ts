@@ -108,6 +108,19 @@ const envSchema = z
       .optional()
       .default('false')
       .transform((v) => v === 'true'),
+    /**
+     * Devolve o token de redefinição na resposta HTTP, para percorrer o fluxo sem caixa de entrada.
+     *
+     * Flag própria, e não `NODE_ENV !== 'production'`, porque o eco só acontece quando o endereço
+     * existe: a forma da resposta passa a responder "essa conta existe aqui" a quem perguntar. Num
+     * staging — que raramente é carimbado como `production` — isso é um oráculo de enumeração
+     * ligado por descuido, e ninguém ia reparar. Aqui é preciso pedir.
+     */
+    AUTH_DEV_ECHO_TOKENS: z
+      .string()
+      .optional()
+      .default('false')
+      .transform((v) => v === 'true'),
     INVITE_TTL_DAYS: z.coerce.number().default(7),
     // Prazo do link da troca de e-mail.
     EMAIL_CHANGE_TTL_HOURS: z.coerce.number().default(24),

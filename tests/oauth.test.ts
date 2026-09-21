@@ -158,6 +158,71 @@ describe('oauth', () => {
     expect(linked?.providerSubject).toBe('google-subject-123');
   });
 
+  async function completeLinkCallback(state: string) {
+    vi.spyOn(oauthProviders, 'exchangeProviderCode').mockResolvedValue({
+      id_token: 'fake-id-token',
+    });
+    vi.spyOn(oauthProviders, 'verifyProviderIdToken').mockResolvedValue(mockIdentity);
+
+    return app.inject({
+      method: 'GET',
+      url: `/oauth/google/callback?code=valid-code&state=${state}`,
+      headers: {
+        cookie: `${OAUTH_PENDING_COOKIE}=${buildPendingCookie({
+          provider: 'google',
+          state,
+          nonce: `nonce-${state}`,
+          codeVerifier: `verifier-${state}`,
+          returnUrl: '/upload',
+        })}`,
+      },
+    });
+  }
+
+  it('vínculo a conta não verificada descarta a senha de quem se cadastrou antes', async () => {
+    // Invasor abre conta por formulário com o e-mail da vítima e nunca confirma.
+    const squatter = await createOrGetUser({
+      email: 'oauth.user@empresa.com',
+      temporaryPassword: 'senha-do-invasor-123',
+    });
+    await prisma.authUser.update({ where: { id: squatter.id }, data: { emailVerified: false } });
+    const tenant = await createTestTenant('tenant_oauth_squat');
+    await createTestMembership(squatter.id, tenant.id, 'active');
+
+    // A vítima entra pelo Google com o e-mail de verdade.
+    await completeLinkCallback('state-squat');
+
+    const credential = await prisma.authCredential.findUnique({ where: { userId: squatter.id } });
+    expect(credential).toBeNull();
+    const user = await prisma.authUser.findUniqueOrThrow({ where: { id: squatter.id } });
+    expect(user.emailVerified).toBe(true);
+    const liveSessions = await prisma.authSession.count({
+      where: { userId: squatter.id, revokedAt: null },
+    });
+    // Só a sessão que o próprio callback abriu para a vítima.
+    expect(liveSessions).toBeLessThanOrEqual(1);
+
+    const login = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email: 'oauth.user@empresa.com', password: 'senha-do-invasor-123' },
+    });
+    expect(login.statusCode).toBe(401);
+  });
+
+  it('vínculo a conta já verificada preserva a senha', async () => {
+    const owner = await createOrGetUser({
+      email: 'oauth.user@empresa.com',
+      temporaryPassword: 'senha-segura-123',
+    });
+    await prisma.authUser.update({ where: { id: owner.id }, data: { emailVerified: true } });
+
+    await completeLinkCallback('state-verified');
+
+    const credential = await prisma.authCredential.findUnique({ where: { userId: owner.id } });
+    expect(credential).not.toBeNull();
+  });
+
   it('callback não vincula e-mail não verificado', async () => {
     await createOrGetUser({
       email: 'oauth.user@empresa.com',

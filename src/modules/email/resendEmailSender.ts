@@ -1,4 +1,5 @@
 import type { EmailAddress, EmailMessage } from './email.types.js';
+import { EmailSendError } from './emailSendError.js';
 
 /**
  * Envio pela API da Resend.
@@ -28,7 +29,10 @@ export type ResendConfig = {
   defaultFrom: EmailAddress;
 };
 
-export async function sendViaResend(config: ResendConfig, message: EmailMessage): Promise<void> {
+export async function sendViaResend(
+  config: ResendConfig,
+  message: EmailMessage,
+): Promise<{ providerMessageId?: string }> {
   const payload = {
     from: formatAddress(message.from ?? config.defaultFrom),
     to: [message.to],
@@ -38,9 +42,9 @@ export async function sendViaResend(config: ResendConfig, message: EmailMessage)
     ...(message.replyTo ? { reply_to: formatAddress(message.replyTo) } : {}),
   };
 
-  // Sem retentativa aqui. Quem chama já decide o que fazer com a falha — `sendInviteEmail`
-  // devolve `send_failed` e o convite continua válido, porque o link é a coisa que importa e
-  // ele já existe. Repetir aqui só atrasaria a resposta da tela.
+  // A classificação de "vale repetir" mora aqui, porque é aqui que se sabe o status HTTP e a
+  // forma da recusa. A decisão de repetir não — isso é do outbox, que tem a fila e o `attempts`
+  // para decidir quando desistir de vez.
   let response: Response;
   try {
     response = await fetch(RESEND_ENDPOINT, {
@@ -53,8 +57,10 @@ export async function sendViaResend(config: ResendConfig, message: EmailMessage)
       signal: AbortSignal.timeout(15_000),
     });
   } catch (error) {
-    throw new Error(
+    // Rede, DNS, timeout: nunca é culpa do conteúdo da mensagem, sempre vale tentar de novo.
+    throw new EmailSendError(
       `Resend inacessível: ${error instanceof Error ? error.message : String(error)}`,
+      true,
     );
   }
 
@@ -63,6 +69,15 @@ export async function sendViaResend(config: ResendConfig, message: EmailMessage)
     // inválido), e é a única pista útil quando o envio falha em produção. Nunca inclui o
     // conteúdo da mensagem, então não há segredo a vazar no registro.
     const detalhe = await response.text().catch(() => '');
-    throw new Error(`Resend recusou o envio (${response.status}): ${detalhe.slice(0, 300)}`);
+    // 429/5xx é o provedor pedindo para tentar mais tarde; qualquer outro (domínio não
+    // verificado, remetente inválido, payload rejeitado) não melhora repetindo.
+    const retryable = response.status === 429 || response.status >= 500;
+    throw new EmailSendError(
+      `Resend recusou o envio (${response.status}): ${detalhe.slice(0, 300)}`,
+      retryable,
+    );
   }
+
+  const body = (await response.json().catch(() => ({}))) as { id?: string };
+  return { providerMessageId: body.id };
 }

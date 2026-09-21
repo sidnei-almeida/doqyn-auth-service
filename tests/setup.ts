@@ -30,6 +30,7 @@ function assertTestDatabase(databaseUrl: string): void {
 
 export const TEST_ENV = {
   NODE_ENV: 'test',
+  AUTH_DEV_ECHO_TOKENS: 'true',
   PORT: '4100',
   /**
    * O banco vem do ambiente que o `vitest.config.ts` montou — ver o comentário de lá.
@@ -89,6 +90,7 @@ beforeEach(async () => {
   await prisma.authLoginAttempt.deleteMany();
   await prisma.authEmailVerification.deleteMany();
   await prisma.authEmailChange.deleteMany();
+  await prisma.authEmailOutbox.deleteMany();
   await prisma.authPasswordReset.deleteMany();
   await prisma.authSession.deleteMany();
   await prisma.authNotificationPreference.deleteMany();

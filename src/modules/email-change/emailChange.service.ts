@@ -23,7 +23,8 @@ import {
 import { ConflictError, GoneError, NotFoundError, ValidationError } from '../../utils/errors.js';
 import { normalizeEmail } from '../../utils/normalize.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
-import { getPlatformSender, isPlatformEmailConfigured, sendEmail } from '../email/email.service.js';
+import { getPlatformSender } from '../email/email.service.js';
+import { enqueueEmail } from '../email/emailOutbox.service.js';
 import { renderEmailChangeEmail } from '../email/renderEmailChangeEmail.js';
 import {
   findUserByEmailLookup,
@@ -34,7 +35,7 @@ import {
 import type { RequestEmailChangeInput } from './emailChange.schemas.js';
 
 function emailChangePath(token: string): string {
-  return `/confirmar-email/${encodeURIComponent(token)}`;
+  return `/confirm-email-change/${encodeURIComponent(token)}`;
 }
 
 async function invalidatePendingEmailChanges(userId: string): Promise<void> {
@@ -157,6 +158,7 @@ async function issueEmailChange(
     confirmUrl,
     expiresInMinutes: env.EMAIL_CHANGE_CODE_TTL_MINUTES,
     expiresInHours: env.EMAIL_CHANGE_TTL_HOURS,
+    locale: user.locale,
   });
 
   const requesterPublic = toPublicUser(user);
@@ -173,17 +175,20 @@ async function issueEmailChange(
     replyTo: { name: requesterName, email: currentEmail },
   };
 
-  // Sai pelo SMTP da plataforma; sem ele o adapter de console registra e nada é enviado.
-  let emailSent = false;
-  if (isPlatformEmailConfigured()) {
-    try {
-      await sendEmail(message);
-      emailSent = true;
-    } catch {
-      emailSent = false;
-    }
-  } else {
-    await sendEmail(message);
+  // Enfileira: a entrega é do drenador, e a resposta não espera a rede. Sem provedor
+  // configurado, `enqueueEmail` cai no mesmo adapter de console que este ponto sempre usou.
+  //
+  // Falha ao enfileirar (Postgres, não a Resend) não pode virar 500 — o pedido de troca já foi
+  // gravado, e a mesma degradação suave que sempre existiu para "a Resend recusou" vale aqui.
+  let emailSent: boolean;
+  try {
+    ({ queued: emailSent } = await enqueueEmail({ userId, purpose: 'email_change', message }));
+  } catch (error) {
+    console.error(
+      'Falha ao enfileirar e-mail de troca de endereço:',
+      error instanceof Error ? error.message : String(error),
+    );
+    emailSent = false;
   }
 
   await prisma.authEmailChange.update({
@@ -211,7 +216,7 @@ async function issueEmailChange(
     expiresAt: expiresAt.toISOString(),
     linkExpiresAt: tokenExpiresAt.toISOString(),
     emailSent,
-    ...(!isProduction(env) ? { confirmCode: code, confirmToken: token, confirmUrl } : {}),
+    ...(!isProduction(env) && env.AUTH_DEV_ECHO_TOKENS ? { confirmCode: code, confirmToken: token, confirmUrl } : {}),
   };
 }
 

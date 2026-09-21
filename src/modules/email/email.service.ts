@@ -25,6 +25,11 @@ function redactEmail(email: string): string {
   return `${visible}***@${domain}`;
 }
 
+/** Mascara todo endereço dentro de um texto livre, como a mensagem de erro de um provedor. */
+export function redactEmailsInText(text: string): string {
+  return text.replace(/[^\s@"'<>(),;:]+@[^\s@"'<>(),;:]+/g, redactEmail);
+}
+
 let cachedSender: EmailSender | null = null;
 
 export function getEmailSender(): EmailSender {
@@ -60,26 +65,25 @@ export function getResendConfig(): ResendConfig | null {
  * guardava não tinha leitor. Restou como parâmetro opcional, que é a forma mais discreta de
  * código morto — some sem erro e ninguém percebe que a alternativa não existe.
  */
-export async function sendEmail(message: EmailMessage): Promise<void> {
+export async function sendEmail(message: EmailMessage): Promise<{ providerMessageId?: string }> {
   const env = loadEnv();
   if (!env.EMAIL_ENABLED) {
     await getEmailSender().send(message);
-    return;
+    return {};
   }
 
   const resend = getResendConfig();
   if (resend) {
-    await sendViaResend(resend, message);
-    return;
+    return await sendViaResend(resend, message);
   }
 
   const fallback = getFallbackSmtpTransport();
   if (fallback) {
-    await sendViaSmtp(fallback, message);
-    return;
+    return await sendViaSmtp(fallback, message);
   }
 
   await getEmailSender().send(message);
+  return {};
 }
 
 /**

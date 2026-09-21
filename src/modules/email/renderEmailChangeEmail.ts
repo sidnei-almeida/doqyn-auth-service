@@ -6,9 +6,9 @@ import {
   emailRows,
   emailText,
   escapeHtml,
-  plural,
   renderEmailLayout,
 } from './emailLayout.js';
+import { duration, EMAIL_MESSAGES, resolveEmailLocale } from './emailMessages.js';
 
 export type EmailChangeTemplateInput = {
   currentEmail: string;
@@ -17,6 +17,8 @@ export type EmailChangeTemplateInput = {
   confirmUrl: string;
   expiresInMinutes: number;
   expiresInHours: number;
+  /** `AuthUser.locale` de quem pediu a troca. */
+  locale?: string | null;
 };
 
 /**
@@ -31,44 +33,48 @@ export function renderEmailChangeEmail(input: EmailChangeTemplateInput): {
   text: string;
   html: string;
 } {
+  const locale = resolveEmailLocale(input.locale);
+  const { code: c, change: m } = EMAIL_MESSAGES[locale];
   const formattedCode = `${input.code.slice(0, 3)} ${input.code.slice(3)}`;
-  const subject = `${formattedCode} é seu código para trocar o e-mail no DOQYN`;
+  const codeExpiry = duration(locale, input.expiresInMinutes, 'minute');
+  const linkExpiry = duration(locale, input.expiresInHours, 'hour');
+  const subject = m.subject(formattedCode);
 
   const text = [
-    'Recebemos uma solicitação para alterar o e-mail da sua conta no DOQYN.',
+    m.textIntro,
     '',
-    `E-mail atual: ${input.currentEmail}`,
-    `Novo e-mail: ${input.newEmail}`,
+    `${m.currentEmail}: ${input.currentEmail}`,
+    `${m.newEmail}: ${input.newEmail}`,
     '',
-    `Seu código: ${formattedCode}`,
+    c.yourCode(formattedCode),
     '',
-    'Ou confirme direto por este link:',
+    c.orConfirmByLink,
     input.confirmUrl,
     '',
-    `O código expira em ${plural(input.expiresInMinutes, 'minuto', 'minutos')}; o link, em ${plural(input.expiresInHours, 'hora', 'horas')}.`,
-    'Se você não solicitou esta alteração, ignore este e-mail — o endereço não muda sozinho.',
+    c.codeAndLinkExpiry(codeExpiry, linkExpiry),
+    m.textIgnore,
   ].join('\n');
 
   const html = renderEmailLayout({
-    eyebrow: 'Troca de e-mail',
-    title: 'Confirme seu novo endereço',
+    lang: locale,
+    eyebrow: m.eyebrow,
+    title: m.title,
     blocks: [
-      emailText('O acesso da sua conta no DOQYN passará a ser por este endereço.'),
+      emailText(escapeHtml(m.lead)),
       emailRows([
-        emailRow('E-mail atual', input.currentEmail),
-        emailRow('Novo e-mail', input.newEmail),
+        emailRow(m.currentEmail, input.currentEmail),
+        emailRow(m.newEmail, input.newEmail),
       ]),
-      emailText('Digite o código abaixo na tela de confirmação.'),
+      emailText(escapeHtml(m.instruction)),
       emailCode(input.code),
-      emailFine(`Expira em ${plural(input.expiresInMinutes, 'minuto', 'minutos')}.`),
-      emailButton('Confirmar sem digitar', input.confirmUrl),
+      emailFine(escapeHtml(c.expiresIn(codeExpiry))),
+      emailButton(c.confirmWithoutTyping, input.confirmUrl),
       emailFine(
-        `Se o botão não abrir, use este endereço — ele vale por ${plural(input.expiresInHours, 'hora', 'horas')}:<br />` +
+        `${escapeHtml(c.linkFallback(linkExpiry))}<br />` +
           `<a href="${escapeHtml(input.confirmUrl)}" style="color:#0e6e6a;word-break:break-all;">${escapeHtml(input.confirmUrl)}</a>`,
       ),
     ],
-    footNote:
-      'Você recebeu este e-mail porque ele foi indicado como novo endereço de uma conta DOQYN. Se não foi você, ignore esta mensagem — nada muda sem esta confirmação, e o endereço atual continua valendo.',
+    footNote: m.footNote,
   });
 
   return { subject, text, html };

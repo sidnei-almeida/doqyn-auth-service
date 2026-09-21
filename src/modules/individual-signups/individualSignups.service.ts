@@ -3,14 +3,13 @@ import type { CountryCode } from 'libphonenumber-js/min';
 import { prisma } from '../../db/prisma.js';
 import { encryptField, hashLookup } from '../../security/crypto.js';
 import { hashPassword, validatePasswordStrength } from '../../security/password.js';
-import { ConflictError, ValidationError } from '../../utils/errors.js';
+import { ValidationError } from '../../utils/errors.js';
 import { assertSignupEmailDeliverable } from '../email-verification/emailVerification.guard.js';
 import {
   maskTaxId,
   normalizeEmail,
   normalizePhone,
   normalizeTaxId,
-  slugify,
 } from '../../utils/normalize.js';
 import { generateIndividualTenantId } from '../../utils/tenantId.js';
 import { recordTermsAcceptance } from '../terms/termsAcceptance.service.js';
@@ -20,6 +19,11 @@ import type {
   IndividualSignupAttachInput,
   IndividualSignupInput,
 } from './individualSignups.schemas.js';
+import {
+  emailConflict,
+  individualTaxIdConflict,
+  toSignupConflict,
+} from '../signups/signupConflicts.js';
 import {
   assertUserCanAttachTenant,
   finalizeSignupProvisioning,
@@ -46,6 +50,11 @@ export interface IndividualSignupSuccess {
   sessionToken?: string;
   emailVerificationRequired?: true;
   verificationTicket?: string;
+  /**
+   * Só faz sentido junto de `emailVerificationRequired`: diz se o primeiro código realmente saiu.
+   * `false` é a conta criada cujo e-mail não chegou — ver `signupOrchestrator.ts`.
+   */
+  emailSent?: boolean;
 }
 
 /**
@@ -99,21 +108,13 @@ export async function submitIndividualSignup(
       existingTenant.status,
     )
   ) {
-    throw input.country === 'BR'
-      ? new ConflictError('Já existe um cadastro com este CPF.', 'CPF_ALREADY_EXISTS')
-      : new ConflictError(
-          'Já existe um cadastro com este documento fiscal.',
-          'TAX_ID_ALREADY_EXISTS',
-        );
+    throw individualTaxIdConflict(input.country);
   }
 
   if (emailLookupHash) {
     const existingUser = await prisma.authUser.findUnique({ where: { emailLookupHash } });
     if (existingUser) {
-      throw new ConflictError(
-        'Este e-mail já está em uso. Faça login ou use outro e-mail.',
-        'EMAIL_ALREADY_EXISTS',
-      );
+      throw emailConflict();
     }
   } else {
     await assertUserCanAttachTenant(attachToUserId!);
@@ -159,7 +160,9 @@ export async function submitIndividualSignup(
         tenantType: 'individual',
         displayNameEncrypted: encryptField(displayName),
         displayNameLookupHash: hashLookup(displayName.toLowerCase()),
-        slug: slugify(displayName),
+        // O nome não é único: derivar o slug dele fazia o segundo "Maria Silva" bater na
+        // constraint e virar 500. O tenantId já carrega sufixo aleatório.
+        slug: tenantTextId,
         country: input.country,
         taxIdType: input.taxIdType,
         taxIdMasked: maskTaxId(taxId),
@@ -191,6 +194,7 @@ export async function submitIndividualSignup(
       {
         flow: 'individual_registration',
         termsVersion: input.acceptedTermsVersion,
+        locale: input.acceptedTermsLocale,
         userId: user.id,
         membershipId: membership.id,
         tenantId: tenant.id,
@@ -201,6 +205,8 @@ export async function submitIndividualSignup(
     );
 
     return { user, tenant, membership };
+  }).catch((error: unknown) => {
+    throw toSignupConflict(error, () => individualTaxIdConflict(input.country));
   });
 
   await logSignupCreatedAudits('individual_signup', {

@@ -31,6 +31,16 @@ export function isArgon2idHash(hash: string): boolean {
 
 export const MIN_PASSWORD_LENGTH = 8;
 
+/**
+ * As duas frases devolvidas aqui são casadas por igualdade exata no frontend.
+ *
+ * `/auth/reset-password` é a única rota de auth que devolve erro sem campo `code`, então a tela
+ * de redefinição traduz pelo texto: ver `RESET_REASON_TO_CODE` em
+ * `doqyn-alpha-document-intelligence/src/features/password-reset/api/passwordResetApi.ts`.
+ * Mexer numa destas frases — ou em `MIN_PASSWORD_LENGTH`, que entra na primeira por interpolação
+ * — faz o casamento cair na reserva em silêncio, e a pessoa passa a ser mandada a pedir um link
+ * novo quando o problema era só a senha curta. Alterando aqui, altere lá.
+ */
 export function validatePasswordStrength(password: string): string | null {
   if (password.length < MIN_PASSWORD_LENGTH) {
     return `A senha deve ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`;

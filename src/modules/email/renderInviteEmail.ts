@@ -5,10 +5,10 @@ import {
   emailRows,
   emailText,
   escapeHtml,
-  plural,
   renderEmailLayout,
   strong,
 } from './emailLayout.js';
+import { duration, EMAIL_MESSAGES, resolveEmailLocale } from './emailMessages.js';
 
 export type InviteEmailTemplateInput = {
   inviterName: string;
@@ -16,6 +16,8 @@ export type InviteEmailTemplateInput = {
   tenantDisplayName: string;
   inviteUrl: string;
   expiresInDays: number;
+  /** `AuthInvite.locale` — quem recebe ainda não tem perfil onde o idioma esteja. */
+  locale?: string | null;
 };
 
 /**
@@ -31,40 +33,40 @@ export function renderInviteEmail(input: InviteEmailTemplateInput): {
   text: string;
   html: string;
 } {
-  const company = input.tenantDisplayName || 'sua empresa';
-  const subject = `${input.inviterName} convidou você para ${company} no DOQYN`;
+  const locale = resolveEmailLocale(input.locale);
+  const m = EMAIL_MESSAGES[locale].invite;
+  const company = input.tenantDisplayName || m.fallbackCompany;
+  const validity = duration(locale, input.expiresInDays, 'day');
+  const subject = m.subject(input.inviterName, company);
 
   const text = [
-    `${input.inviterName} (${input.inviterEmail}) convidou você para participar de ${company} no DOQYN.`,
+    m.textIntro(input.inviterName, input.inviterEmail, company),
     '',
-    'Para aceitar o convite e criar seu acesso, use o link abaixo:',
+    m.textAccept,
     input.inviteUrl,
     '',
-    `Este convite expira em ${plural(input.expiresInDays, 'dia', 'dias')}.`,
+    m.textExpires(validity),
     '',
-    'Se você não esperava este convite, ignore este e-mail.',
+    m.textIgnore,
   ].join('\n');
 
   const html = renderEmailLayout({
-    eyebrow: 'Convite',
-    title: `Você foi convidado para ${company}`,
+    lang: locale,
+    eyebrow: m.eyebrow,
+    title: m.title(company),
     blocks: [
-      emailText(
-        `${strong(input.inviterName)} convidou você para participar de ${strong(company)} no DOQYN — ` +
-          'a plataforma onde a empresa guarda, classifica e assina os documentos dela.',
-      ),
+      emailText(m.body(strong(input.inviterName), strong(company))),
       emailRows([
-        emailRow('Quem convidou', `${input.inviterName} · ${input.inviterEmail}`),
-        emailRow('Empresa', company),
+        emailRow(m.rowInviter, `${input.inviterName} · ${input.inviterEmail}`),
+        emailRow(m.rowCompany, company),
       ]),
-      emailButton('Aceitar convite', input.inviteUrl),
+      emailButton(m.button, input.inviteUrl),
       emailFine(
-        `Se o botão não abrir, use este endereço — o convite vale por ${plural(input.expiresInDays, 'dia', 'dias')}:<br />` +
+        `${escapeHtml(m.linkFallback(validity))}<br />` +
           `<a href="${escapeHtml(input.inviteUrl)}" style="color:#0e6e6a;word-break:break-all;">${escapeHtml(input.inviteUrl)}</a>`,
       ),
     ],
-    footNote:
-      'Você recebeu este e-mail porque seu endereço foi convidado para uma empresa no DOQYN. Se não esperava este convite, ignore esta mensagem — nenhuma conta é criada sem que você aceite.',
+    footNote: m.footNote,
   });
 
   return { subject, text, html };

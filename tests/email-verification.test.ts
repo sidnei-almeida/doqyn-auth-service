@@ -130,7 +130,7 @@ describe('email verification', () => {
     const ticket = issueEmailVerificationTicket(user.id);
 
     const confirmUrl = (await send(app, ticket)).json().confirmUrl as string;
-    const token = decodeURIComponent(confirmUrl.split('/verificar-email/')[1]);
+    const token = decodeURIComponent(confirmUrl.split('/verify-email/')[1]);
 
     const confirmed = await app.inject({
       method: 'POST',
@@ -163,6 +163,29 @@ describe('email verification', () => {
 
     const updated = await prisma.authUser.findUnique({ where: { id: user.id } });
     expect(updated?.emailVerified).toBe(false);
+  });
+
+  it('palpites simultâneos não passam do teto de tentativas', async () => {
+    resetRateLimitStore();
+    const user = await createUnverifiedUser('rajada@ev.test', 'tenant_ev_burst');
+    const ticket = issueEmailVerificationTicket(user.id);
+
+    const code = (await send(app, ticket)).json().code as string;
+    const max = Number(process.env.EMAIL_VERIFICATION_MAX_ATTEMPTS ?? 5);
+    const guesses = Array.from({ length: max * 3 }, (_, i) =>
+      String(i).padStart(6, '0') === code ? '999999' : String(i).padStart(6, '0'),
+    );
+
+    const responses = await Promise.all(guesses.map((guess) => confirm(app, ticket, guess)));
+    const compared = responses.filter(
+      (response) => response.json().code === 'EMAIL_VERIFICATION_INVALID_CODE',
+    );
+    expect(compared.length).toBeLessThanOrEqual(max);
+
+    const pending = await prisma.authEmailVerification.findFirst({
+      where: { userId: user.id, usedAt: null },
+    });
+    expect(pending?.attempts).toBe(max);
   });
 
   it('recusa reenvio antes do intervalo mínimo', async () => {
@@ -222,10 +245,11 @@ describe('email verification', () => {
     expect((await send(app, `${user.id}.${past}.${signature}`)).statusCode).toBe(401);
   });
 
-  it('quem tem vínculo OAuth entra sem confirmar', async () => {
+  it('vínculo OAuth não isenta o login por senha de confirmar o e-mail', async () => {
     resetRateLimitStore();
     const user = await createUnverifiedUser('oauth@ev.test', 'tenant_ev_oauth');
-    // O Entra sem a claim `xms_edov` chega com emailVerified false; o vínculo é a prova aceita.
+    // O vínculo prova o caminho do provedor, não a senha: com a isenção, quem abriu a conta com o
+    // e-mail de outra pessoa logava pela senha dele assim que a dona entrasse pelo Google.
     await prisma.authOAuthAccount.create({
       data: {
         userId: user.id,
@@ -241,7 +265,8 @@ describe('email verification', () => {
       url: '/auth/login',
       payload: { email: 'oauth@ev.test', password: PASSWORD },
     });
-    expect(login.statusCode).toBe(200);
+    expect(login.statusCode).toBe(403);
+    expect(login.json().code).toBe('EMAIL_NOT_VERIFIED');
   });
 
   it('não emite código para e-mail já confirmado', async () => {

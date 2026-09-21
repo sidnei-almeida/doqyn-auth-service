@@ -1,6 +1,6 @@
-import type { InviteStatus, TenantRole } from '@prisma/client';
+import { Prisma, type InviteStatus, type TenantRole } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
-import { getPublicAppBaseUrl, isProduction, loadEnv } from '../../config/env.js';
+import { getPublicAppBaseUrl, isProduction, loadEnv, type Env } from '../../config/env.js';
 import { decryptField, encryptField, hashInviteToken, hashLookup } from '../../security/crypto.js';
 import { generateInviteToken } from '../../security/sessionToken.js';
 import { hashPassword, validatePasswordStrength } from '../../security/password.js';
@@ -8,7 +8,14 @@ import {
   checkInviteAcceptRateLimit,
   checkInviteCreateRateLimit,
 } from '../../security/rateLimit.js';
-import { ConflictError, GoneError, NotFoundError, ValidationError } from '../../utils/errors.js';
+import {
+  ConflictError,
+  ForbiddenError,
+  GoneError,
+  NotFoundError,
+  UnauthorizedError,
+  ValidationError,
+} from '../../utils/errors.js';
 import { normalizeEmail, normalizePhone } from '../../utils/normalize.js';
 import { auditCtx, logAuthAudit } from '../audit/authAudit.service.js';
 import { assertCanGrantRoles, resolveTenantScope } from '../admin/adminAuthorization.js';
@@ -18,7 +25,6 @@ import {
   claimUsername,
   findUserByEmailLookup,
   findUserById,
-  getUserCredential,
   toPublicUser,
 } from '../users/users.service.js';
 import { sendInviteEmail } from './inviteEmail.js';
@@ -40,13 +46,27 @@ function normalizeRoles(roles: TenantRole[]): TenantRole[] {
 }
 
 function invitePathForToken(token: string): string {
-  return `/convite/${encodeURIComponent(token)}`;
+  return `/invite/${encodeURIComponent(token)}`;
 }
 
-function buildInviteLink(token: string): string {
-  const env = loadEnv();
+function buildInviteLink(token: string, env: Env = loadEnv()): string {
   const baseUrl = getPublicAppBaseUrl(env);
   return `${baseUrl}${invitePathForToken(token)}`;
+}
+
+/**
+ * O que do segredo do convite volta para quem convidou: nada, em produção.
+ *
+ * Link e token são a mesma coisa — quem tem um aceita o convite. Devolvidos ao administrador, davam
+ * a ele um jeito de aceitar no lugar da pessoa convidada. Fora de produção continuam na resposta,
+ * para que o fluxo possa ser percorrido sem provedor de e-mail.
+ */
+export function inviteSecretsForInviter(
+  token: string,
+  env: Env = loadEnv(),
+): { inviteLink?: string; inviteToken?: string } {
+  if (isProduction(env) || !env.AUTH_DEV_ECHO_TOKENS) return {};
+  return { inviteLink: buildInviteLink(token, env), inviteToken: token };
 }
 
 async function expireStaleInvites(): Promise<void> {
@@ -125,7 +145,9 @@ export async function createInvite(actor: AdminActor, input: CreateInviteInput, 
   let inviteId: string;
   if (existingPending) {
     const updated = await prisma.$transaction(async (tx) => {
-      await tx.authInviteRole.deleteMany({ where: { inviteId: existingPending.id } });
+      // O UPDATE vem antes de mexer nos papéis porque trava a linha do convite até o commit. Na
+      // ordem inversa, dois reenvios simultâneos apagavam os papéis juntos e os dois recriavam,
+      // batendo no único (invite_id, role).
       const invite = await tx.authInvite.update({
         where: { id: existingPending.id },
         data: {
@@ -135,12 +157,14 @@ export async function createInvite(actor: AdminActor, input: CreateInviteInput, 
           invitedByMembershipId: actor.membership.membershipId,
           firstNameEncrypted: firstName ? encryptField(firstName) : null,
           lastNameEncrypted: lastName ? encryptField(lastName) : null,
+          locale: tenant.defaultLocale,
           status: 'pending',
           acceptedAt: null,
           acceptedByUserId: null,
           acceptedMembershipId: null,
         },
       });
+      await tx.authInviteRole.deleteMany({ where: { inviteId: invite.id } });
       await tx.authInviteRole.createMany({
         data: roles.map((role) => ({ inviteId: invite.id, role })),
       });
@@ -148,29 +172,55 @@ export async function createInvite(actor: AdminActor, input: CreateInviteInput, 
     });
     inviteId = updated.id;
   } else {
-    const created = await prisma.$transaction(async (tx) => {
-      const invite = await tx.authInvite.create({
-        data: {
-          tenantId: tenant.id,
-          emailEncrypted: encryptField(email),
-          emailLookupHash,
-          firstNameEncrypted: firstName ? encryptField(firstName) : null,
-          lastNameEncrypted: lastName ? encryptField(lastName) : null,
-          invitedByUserId: actor.userId,
-          invitedByMembershipId: actor.membership.membershipId,
-          tokenHash,
-          expiresAt,
-        },
+    const created = await prisma
+      .$transaction(async (tx) => {
+        // Pendente vencido ainda ocupa o índice único de convite pendente: sai do caminho antes.
+        await tx.authInvite.updateMany({
+          where: {
+            tenantId: tenant.id,
+            emailLookupHash,
+            status: 'pending',
+            expiresAt: { lte: new Date() },
+          },
+          data: { status: 'expired' },
+        });
+        const invite = await tx.authInvite.create({
+          data: {
+            tenantId: tenant.id,
+            emailEncrypted: encryptField(email),
+            emailLookupHash,
+            firstNameEncrypted: firstName ? encryptField(firstName) : null,
+            lastNameEncrypted: lastName ? encryptField(lastName) : null,
+            invitedByUserId: actor.userId,
+            invitedByMembershipId: actor.membership.membershipId,
+            tokenHash,
+            expiresAt,
+            /**
+             * Quem recebe ainda não tem conta, então o idioma é o da empresa que convida — é a
+             * língua em que ela trabalha, e a do ambiente onde a pessoa vai entrar.
+             */
+            locale: tenant.defaultLocale,
+          },
+        });
+        await tx.authInviteRole.createMany({
+          data: roles.map((role) => ({ inviteId: invite.id, role })),
+        });
+        return invite;
+      })
+      .catch((error: unknown) => {
+        // Outro pedido criou o pendente entre a busca e a gravação (clique duplo, retry). O índice
+        // `auth_invites_tenant_email_pending_key` recusou a segunda linha.
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          throw new ConflictError(
+            'Já existe um convite sendo criado para este e-mail. Atualize a lista.',
+            'INVITE_ALREADY_PENDING',
+          );
+        }
+        throw error;
       });
-      await tx.authInviteRole.createMany({
-        data: roles.map((role) => ({ inviteId: invite.id, role })),
-      });
-      return invite;
-    });
     inviteId = created.id;
   }
 
-  const inviteLink = buildInviteLink(token);
   const tenantDisplayName = tenant.displayNameEncrypted
     ? decryptField(tenant.displayNameEncrypted)
     : tenant.tenantId;
@@ -189,6 +239,7 @@ export async function createInvite(actor: AdminActor, input: CreateInviteInput, 
     inviterName,
     inviterEmail,
     expiresInDays: loadEnv().INVITE_TTL_DAYS,
+    locale: tenant.defaultLocale,
   });
 
   await logAuthAudit(
@@ -216,7 +267,7 @@ export async function createInvite(actor: AdminActor, input: CreateInviteInput, 
       expiresAt: string;
       status: InviteStatus;
     };
-    inviteLink: string;
+    inviteLink?: string;
     inviteToken?: string;
     emailSent: boolean;
     emailSkipReason?: string;
@@ -229,16 +280,11 @@ export async function createInvite(actor: AdminActor, input: CreateInviteInput, 
       expiresAt: expiresAt.toISOString(),
       status: 'pending',
     },
-    inviteLink,
     emailSent: emailResult.sent,
     ...(emailResult.reason ? { emailSkipReason: emailResult.reason } : {}),
   };
 
-  if (!isProduction(loadEnv())) {
-    response.inviteToken = token;
-  }
-
-  return response;
+  return { ...response, ...inviteSecretsForInviter(token) };
 }
 
 export async function getInviteByToken(token: string) {
@@ -259,7 +305,6 @@ export async function getInviteByToken(token: string) {
 
   const email = decryptField(invite.emailEncrypted);
   const existingUser = await findUserByEmailLookup(email);
-  const existingCredential = existingUser ? await getUserCredential(existingUser.id) : null;
 
   return {
     ok: true,
@@ -274,17 +319,24 @@ export async function getInviteByToken(token: string) {
       roles: invite.roles.map((role) => role.role),
       expiresAt: invite.expiresAt.toISOString(),
       requiresAccountCreation: !existingUser,
-      requiresPassword: !existingCredential,
+      // Senha só nasce com conta nova. Conta existente — com senha ou só com Google/Microsoft —
+      // aceita logada nela, e o convite não toca a credencial de ninguém.
+      requiresPassword: !existingUser,
       requiresWhatsapp: !existingUser?.whatsappEncrypted,
+      requiresLogin: Boolean(existingUser),
     },
   };
 }
+
+/** Sessão do navegador no momento do aceite, já validada pela rota. */
+export type InviteAcceptSession = { userId: string; token: string };
 
 export async function acceptInvite(
   token: string,
   input: AcceptInviteInput,
   ipHash?: string,
   userAgentHash?: string,
+  currentSession?: InviteAcceptSession,
 ) {
   if (ipHash) {
     await checkInviteAcceptRateLimit(ipHash);
@@ -310,11 +362,27 @@ export async function acceptInvite(
   const email = decryptField(invite.emailEncrypted);
   const roles = invite.roles.map((role) => role.role);
   const existingUser = await findUserByEmailLookup(email);
-  const existingCredential = existingUser ? await getUserCredential(existingUser.id) : null;
-  const requiresPassword = !existingCredential;
   const passwordInput = input.password?.trim() ?? '';
 
+  // O token prova que alguém abriu o link do convite — não que é o dono de uma conta que já existe.
+  // Aceitar só com ele deixava quem tivesse o link gravar senha numa conta criada por Google ou
+  // Microsoft, trocar o nome e sair com a sessão dela; numa conta com senha, pôr a pessoa como
+  // membro de outra empresa sem ela saber. E o link voltava para quem convidou. Conta que já existe
+  // aceita convite logada nela; o token sozinho só cria conta nova.
   if (existingUser) {
+    if (!currentSession) {
+      throw new UnauthorizedError(
+        'Este e-mail já tem conta no DOQYN. Entre com ela para aceitar o convite.',
+        'INVITE_LOGIN_REQUIRED',
+      );
+    }
+    if (currentSession.userId !== existingUser.id) {
+      throw new ForbiddenError(
+        'Este convite é para outra conta. Entre com o e-mail convidado para aceitá-lo.',
+        'INVITE_WRONG_ACCOUNT',
+      );
+    }
+
     const duplicate = await prisma.authMembership.findFirst({
       where: {
         tenantId: invite.tenantId,
@@ -352,16 +420,8 @@ export async function acceptInvite(
     if (!whatsappInput) {
       throw new ValidationError('Informe um WhatsApp válido.', 'VALIDATION_ERROR');
     }
-  } else {
-    if (requiresPassword) {
-      const passwordError = validatePasswordStrength(passwordInput);
-      if (passwordError) {
-        throw new ValidationError(passwordError, 'WEAK_PASSWORD');
-      }
-    }
-    if (requiresWhatsapp && !whatsappInput) {
-      throw new ValidationError('Informe um WhatsApp válido.', 'VALIDATION_ERROR');
-    }
+  } else if (requiresWhatsapp && !whatsappInput) {
+    throw new ValidationError('Informe um WhatsApp válido.', 'VALIDATION_ERROR');
   }
 
   const whatsapp = whatsappInput ? normalizePhone(whatsappInput) : null;
@@ -370,11 +430,10 @@ export async function acceptInvite(
 
   const result = await prisma.$transaction(async (tx) => {
     let userId = existingUser?.id;
-    let passwordWasSet = false;
+    const accountCreated = !userId;
 
     if (!userId) {
       const passwordHash = await hashPassword(passwordInput);
-      passwordWasSet = true;
       const user = await tx.authUser.create({
         data: {
           emailEncrypted: encryptField(email),
@@ -398,41 +457,14 @@ export async function acceptInvite(
         data: { userId: user.id, passwordHash },
       });
       userId = user.id;
-    } else if (requiresPassword) {
-      const passwordHash = await hashPassword(passwordInput);
-      await tx.authCredential.create({
-        data: { userId, passwordHash },
-      });
-      passwordWasSet = true;
+    } else if (requiresWhatsapp && whatsapp) {
+      // A conta é de quem está logado nela. O convite só completa o que falta; nome e senha são
+      // dela e não mudam por aqui.
       await tx.authUser.update({
         where: { id: userId },
         data: {
-          firstNameEncrypted: encryptField(firstName),
-          lastNameEncrypted: encryptField(lastName),
-          ...(whatsapp
-            ? {
-                whatsappEncrypted: encryptField(whatsapp),
-                whatsappLookupHash: hashLookup(whatsapp),
-              }
-            : {}),
-        },
-      });
-    } else if (whatsapp) {
-      await tx.authUser.update({
-        where: { id: userId },
-        data: {
-          firstNameEncrypted: encryptField(firstName),
-          lastNameEncrypted: encryptField(lastName),
           whatsappEncrypted: encryptField(whatsapp),
           whatsappLookupHash: hashLookup(whatsapp),
-        },
-      });
-    } else {
-      await tx.authUser.update({
-        where: { id: userId },
-        data: {
-          firstNameEncrypted: encryptField(firstName),
-          lastNameEncrypted: encryptField(lastName),
         },
       });
     }
@@ -462,6 +494,7 @@ export async function acceptInvite(
       {
         flow: 'invite_accept',
         termsVersion: input.acceptedTermsVersion,
+        locale: input.acceptedTermsLocale,
         userId,
         membershipId: membership.id,
         tenantId: invite.tenantId,
@@ -480,20 +513,26 @@ export async function acceptInvite(
       },
     });
 
-    return { membershipId: membership.id, userId, passwordWasSet };
+    return { membershipId: membership.id, userId, accountCreated };
   });
 
   await setMembershipRoles(result.membershipId, roles);
   await awaitTenantMemberSync(result.membershipId);
 
   let sessionToken: string | undefined;
-  if (result.passwordWasSet) {
+  if (result.accountCreated) {
     const session = await createSession(result.userId, ipHash, userAgentHash);
     await prisma.authSession.update({
       where: { sessionTokenHash: hashSessionToken(session.token) },
       data: { activeMembershipId: result.membershipId },
     });
     sessionToken = session.token;
+  } else if (currentSession) {
+    // Quem aceitou já estava logado: a sessão atual passa a apontar para a empresa do convite.
+    await prisma.authSession.update({
+      where: { sessionTokenHash: hashSessionToken(currentSession.token) },
+      data: { activeMembershipId: result.membershipId },
+    });
   }
 
   await logAuthAudit('invite.accepted', {
@@ -506,12 +545,11 @@ export async function acceptInvite(
 
   return {
     ok: true,
-    message: sessionToken
-      ? 'Convite aceito com sucesso. Sua sessão foi iniciada.'
-      : 'Convite aceito com sucesso. Entre com sua senha atual para acessar o DOQYN.',
+    message: 'Convite aceito com sucesso.',
     membershipId: result.membershipId,
-    requiresLogin: !sessionToken,
-    sessionEstablished: Boolean(sessionToken),
+    requiresLogin: false,
+    // Conta nova recebe sessão agora; conta existente só chega aqui já logada.
+    sessionEstablished: true,
     sessionToken,
   };
 }

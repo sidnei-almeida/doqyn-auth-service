@@ -23,12 +23,13 @@ import {
   ValidationError,
 } from '../../utils/errors.js';
 import { logAuthAudit } from '../audit/authAudit.service.js';
-import { getPlatformSender, isPlatformEmailConfigured, sendEmail } from '../email/email.service.js';
+import { getPlatformSender } from '../email/email.service.js';
+import { enqueueEmail } from '../email/emailOutbox.service.js';
 import { renderEmailVerificationEmail } from '../email/renderEmailVerificationEmail.js';
 import { findUserById, toPublicUser } from '../users/users.service.js';
 
 function verificationPath(token: string): string {
-  return `/verificar-email/${encodeURIComponent(token)}`;
+  return `/verify-email/${encodeURIComponent(token)}`;
 }
 
 async function invalidatePendingVerifications(userId: string): Promise<void> {
@@ -178,6 +179,7 @@ export async function sendEmailVerificationCode(
     confirmUrl,
     expiresInMinutes: env.EMAIL_VERIFICATION_CODE_TTL_MINUTES,
     linkExpiresInHours: env.EMAIL_VERIFICATION_TTL_HOURS,
+    locale: user.locale,
   });
 
   const sender = getPlatformSender();
@@ -189,17 +191,22 @@ export async function sendEmailVerificationCode(
     from: { name: sender.name, email: sender.email },
   };
 
-  // Sai pelo SMTP da plataforma; sem ele o adapter de console registra e nada é enviado.
-  let emailSent = false;
-  if (isPlatformEmailConfigured()) {
-    try {
-      await sendEmail(message);
-      emailSent = true;
-    } catch {
-      emailSent = false;
-    }
-  } else {
-    await sendEmail(message);
+  // Enfileira no outbox — o envio de fato é trabalho do drenador, e a resposta não espera a
+  // rede da Resend/SMTP. Sem plataforma configurada, `enqueueEmail` cai no mesmo adapter de
+  // console que este ponto sempre usou.
+  //
+  // O código de verificação já foi criado no banco antes daqui — uma falha ao enfileirar não
+  // pode virar 500 e derrubar um cadastro que já existe. Antes de existir outbox, essa mesma
+  // degradação suave era o comportamento (só que causada pela Resend, não pelo Postgres).
+  let emailSent: boolean;
+  try {
+    ({ queued: emailSent } = await enqueueEmail({ userId, purpose: 'email_verification', message }));
+  } catch (error) {
+    console.error(
+      'Falha ao enfileirar código de verificação:',
+      error instanceof Error ? error.message : String(error),
+    );
+    emailSent = false;
   }
 
   await prisma.authEmailVerification.update({
@@ -216,14 +223,14 @@ export async function sendEmailVerificationCode(
   return {
     ok: true as const,
     message: emailSent
-      ? `Enviamos um código de 6 dígitos para ${email}.`
+      ? `Um código de 6 dígitos está a caminho de ${email}.`
       : 'Código criado, mas o e-mail não saiu. Em desenvolvimento, use o código abaixo.',
     email,
     expiresAt: expiresAt.toISOString(),
     emailSent,
     // Em desenvolvimento o código volta na resposta: sem SMTP configurado, não haveria outro jeito
     // de percorrer o fluxo inteiro. Em produção nunca sai daqui.
-    ...(!isProduction(env) ? { code, confirmUrl } : {}),
+    ...(!isProduction(env) && env.AUTH_DEV_ECHO_TOKENS ? { code, confirmUrl } : {}),
   };
 }
 
@@ -266,7 +273,15 @@ export async function confirmEmailVerificationCode(userId: string, code: string,
   }
 
   const env = loadEnv();
-  if (pending.attempts >= env.EMAIL_VERIFICATION_MAX_ATTEMPTS) {
+
+  // A tentativa é reservada ANTES da comparação, num UPDATE condicional ao teto. Conferir o teto
+  // numa leitura e incrementar depois deixava N palpites simultâneos passarem todos pela checagem,
+  // cada um lendo o contador de antes. Persiste: reiniciar o processo não devolve palpites.
+  const reserved = await prisma.authEmailVerification.updateMany({
+    where: { id: pending.id, attempts: { lt: env.EMAIL_VERIFICATION_MAX_ATTEMPTS } },
+    data: { attempts: { increment: 1 } },
+  });
+  if (reserved.count === 0) {
     throw new GoneError(
       'Código bloqueado por excesso de tentativas. Peça um novo.',
       'EMAIL_VERIFICATION_TOO_MANY_ATTEMPTS',
@@ -274,11 +289,8 @@ export async function confirmEmailVerificationCode(userId: string, code: string,
   }
 
   if (!hashesMatch(pending.codeHash, hashEmailVerificationCode(userId, code))) {
-    // A tentativa é contada antes de qualquer resposta, e persiste: reiniciar o processo não
-    // devolve palpites a quem está adivinhando.
-    const updated = await prisma.authEmailVerification.update({
+    const updated = await prisma.authEmailVerification.findUniqueOrThrow({
       where: { id: pending.id },
-      data: { attempts: { increment: 1 } },
       select: { attempts: true },
     });
     const attemptsLeft = Math.max(0, env.EMAIL_VERIFICATION_MAX_ATTEMPTS - updated.attempts);

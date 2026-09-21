@@ -27,6 +27,7 @@ import {
 import type { AdminActor } from './admin.types.js';
 import type { ApproveMembershipInput } from './admin.schemas.js';
 import { scheduleTenantMemberSync } from '../../integrations/memberSync.js';
+import { revokeSharesOfEndedMembership } from './memberShareRevocation.js';
 
 export interface ListMembersFilters {
   tenantId?: string;
@@ -264,6 +265,7 @@ export async function removeMember(
   });
 
   await revokeSessionsByActiveMembership(membershipId);
+  await revokeSharesOfEndedMembership(actor, target, membershipId, 'membership_removed', ctx);
 
   await logAuthAudit(
     'membership.removed',
@@ -382,7 +384,6 @@ export async function rejectMembership(
         rejectedReasonEncrypted,
       },
     });
-
   });
 
   await logAuthAudit(
@@ -431,6 +432,10 @@ export async function blockMembership(
   });
 
   const revokedSessionsCount = await revokeSessionsByActiveMembership(targetMembershipId);
+  await revokeSharesOfEndedMembership(actor, target, targetMembershipId, 'membership_blocked', {
+    ipHash,
+    userAgentHash,
+  });
 
   await logAuthAudit(
     'membership.blocked',

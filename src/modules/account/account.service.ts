@@ -5,6 +5,7 @@ import { auditCtx, logAuthAudit } from '../audit/authAudit.service.js';
 import { assertPlatformOperation } from '../admin/adminAuthorization.js';
 import type { AdminActor } from '../admin/admin.types.js';
 import { revokeAllUserSessions } from '../sessions/sessionsRevoke.service.js';
+import { revokeSharesOfAnonymizedUser } from '../admin/memberShareRevocation.js';
 import { findUserById, toPublicUser } from '../users/users.service.js';
 import type { PublicUser } from '../users/users.schemas.js';
 
@@ -38,6 +39,48 @@ export async function requestAccountDeletion(
  * Perfil da própria pessoa: nome e sobrenome. E-mail tem fluxo próprio, com confirmação,
  * e papéis são decisão de quem administra — nada disso passa por aqui.
  */
+/**
+ * Grava idioma e fuso da conta.
+ *
+ * Fica no auth-service, e não no alpha, porque é a identidade que responde "em que língua
+ * falar com esta pessoa" — e quem precisa da resposta com mais frequência é o servidor
+ * renderizando e-mail para vários destinatários de uma vez.
+ *
+ * Entra na trilha de auditoria como qualquer outra mudança de conta: trocar o idioma muda o
+ * que a pessoa recebe, e uma reclamação de "meu e-mail veio em inglês" precisa ter onde ser
+ * conferida.
+ */
+export async function updateOwnPreferences(
+  userId: string,
+  input: { locale?: string; timeZone?: string | null },
+  ctx?: { ipHash?: string; userAgentHash?: string },
+): Promise<PublicUser> {
+  const user = await findUserById(userId);
+  if (!user) {
+    throw new NotFoundError('Usuário não encontrado.');
+  }
+
+  const updated = await prisma.authUser.update({
+    where: { id: userId },
+    data: {
+      ...(input.locale !== undefined ? { locale: input.locale } : {}),
+      ...(input.timeZone !== undefined ? { timeZone: input.timeZone } : {}),
+    },
+  });
+
+  await logAuthAudit('account.preferences_updated', {
+    userId,
+    ipHash: ctx?.ipHash,
+    userAgentHash: ctx?.userAgentHash,
+    metadata: {
+      ...(input.locale !== undefined ? { locale: input.locale } : {}),
+      ...(input.timeZone !== undefined ? { timeZone: input.timeZone } : {}),
+    },
+  });
+
+  return toPublicUser(updated);
+}
+
 export async function updateOwnProfile(
   userId: string,
   input: { firstName: string; lastName: string },
@@ -132,6 +175,9 @@ export async function anonymizeUser(
   });
 
   await revokeAllUserSessions(userId);
+  // Apagar os dados pessoais não apaga o que a pessoa compartilhou, e o link externo não pede
+  // login: sem este corte, o documento seguia servido em nome de uma conta que não existe mais.
+  const revokedShareMemberships = await revokeSharesOfAnonymizedUser(actor, userId, ctx);
 
   await logAuthAudit(
     'user.anonymized',
@@ -139,6 +185,7 @@ export async function anonymizeUser(
       targetUserId: userId,
       ipHash: ctx?.ipHash,
       userAgentHash: ctx?.userAgentHash,
+      metadata: { revokedShareMemberships },
     }),
   );
 

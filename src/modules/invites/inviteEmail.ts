@@ -1,5 +1,6 @@
 import { getPublicAppBaseUrl, loadEnv } from '../../config/env.js';
-import { getPlatformSender, isPlatformEmailConfigured, sendEmail } from '../email/email.service.js';
+import { getPlatformSender, sendEmail } from '../email/email.service.js';
+import { enqueueEmail } from '../email/emailOutbox.service.js';
 import { renderInviteEmail } from '../email/renderInviteEmail.js';
 
 export type SendInviteEmailInput = {
@@ -9,11 +10,13 @@ export type SendInviteEmailInput = {
   inviterName: string;
   inviterEmail: string;
   expiresInDays: number;
+  /** Idioma gravado no convite. */
+  locale?: string | null;
 };
 
 export type SendInviteEmailResult = {
   sent: boolean;
-  reason?: 'email_disabled' | 'smtp_not_configured' | 'send_failed';
+  reason?: 'email_disabled' | 'smtp_not_configured';
 };
 
 /**
@@ -30,6 +33,7 @@ export async function sendInviteEmail(input: SendInviteEmailInput): Promise<Send
     tenantDisplayName: input.tenantDisplayName,
     inviteUrl,
     expiresInDays: input.expiresInDays,
+    locale: input.locale,
   });
 
   const sender = getPlatformSender();
@@ -47,15 +51,25 @@ export async function sendInviteEmail(input: SendInviteEmailInput): Promise<Send
     return { sent: false, reason: 'email_disabled' };
   }
 
-  if (!isPlatformEmailConfigured()) {
-    await sendEmail(message);
+  // `send_failed` deixou de existir como resposta: com o outbox, a recusa do provedor acontece
+  // depois que esta função já respondeu, e inventar um desfecho aqui seria mentir. O que sobra
+  // para dizer é se a mensagem ficou durável — e, quando não há provedor, que ela não ficou.
+  //
+  // Falha ao enfileirar (Postgres) é o mesmo caso que "sem provedor" para quem chama: o convite
+  // já existe no banco, e devolver 500 aqui derrubaria uma criação que já aconteceu.
+  let queued: boolean;
+  try {
+    ({ queued } = await enqueueEmail({ userId: null, purpose: 'invite', message }));
+  } catch (error) {
+    console.error(
+      'Falha ao enfileirar e-mail de convite:',
+      error instanceof Error ? error.message : String(error),
+    );
+    queued = false;
+  }
+  if (!queued) {
     return { sent: false, reason: 'smtp_not_configured' };
   }
 
-  try {
-    await sendEmail(message);
-    return { sent: true };
-  } catch {
-    return { sent: false, reason: 'send_failed' };
-  }
+  return { sent: true };
 }

@@ -2,7 +2,7 @@ const ALLOWED_RETURN_PATHS = new Set([
   '/upload',
   '/dashboard',
   '/documents',
-  '/biblioteca',
+  '/library',
   '/settings',
   '/rules',
   '/users',

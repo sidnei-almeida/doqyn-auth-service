@@ -7,7 +7,7 @@ describe('renderInviteEmail', () => {
       inviterName: 'Maria Admin',
       inviterEmail: 'maria@empresa.com.br',
       tenantDisplayName: 'Empresa Teste',
-      inviteUrl: 'http://localhost:5173/convite/token-demo',
+      inviteUrl: 'http://localhost:5173/invite/token-demo',
       expiresInDays: 7,
     });
 
@@ -15,6 +15,6 @@ describe('renderInviteEmail', () => {
     expect(rendered.subject).toContain('Empresa Teste');
     expect(rendered.text).toContain('maria@empresa.com.br');
     expect(rendered.html).toContain('Aceitar convite');
-    expect(rendered.html).toContain('localhost:5173/convite/');
+    expect(rendered.html).toContain('localhost:5173/invite/');
   });
 });
